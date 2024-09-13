@@ -10,7 +10,7 @@ public class SmsService
     public SmsService(SmsProviderFactory smsProviderFactory, IConfiguration configuration)
     {
         _smsProviderFactory = smsProviderFactory;
-        _activeProvider = configuration["ActiveSmsProvider"] ?? "SMSRU";
+        _activeProvider = configuration["ActiveSmsProvider"] ?? "SmsRu";
     }
 
     public async Task<string> SendSmsAsync(string phone, string message)
@@ -25,7 +25,6 @@ public class SmsService
 
     public bool SwitchProvider(string methodCode)
     {
-        // Допустимые провайдеры
         var allowedProviders = new[] { "SMSRU", "SMSRU2" };
         if (!allowedProviders.Contains(methodCode))
             return false;
