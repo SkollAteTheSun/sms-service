@@ -12,7 +12,7 @@ public class SmsRu2Provider : ISmsProvider
     public SmsRu2Provider(IConfiguration configuration, HttpClient client)
     {
         _configuration = configuration;
-        _client = client; // BaseAddress уже установлен через AddHttpClient
+        _client = client;
     }
 
     public async Task<SmsRuResponse> SendSmsAsync(string phone, string message)
