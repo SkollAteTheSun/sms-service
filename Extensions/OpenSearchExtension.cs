@@ -1,0 +1,48 @@
+using Newtonsoft.Json.Serialization;
+using OpenSearch.Client;
+using OpenSearch.Client.JsonNetSerializer;
+using OpenSearch.Net;
+
+namespace Kp.Ms.Sms.Extensions;
+
+public static class OpenSearchExtension
+{
+    public static void AddOpenSearch(this IServiceCollection services, IConfiguration configuration)
+    {
+        string? openSearchUrl = configuration["OpenSearch:Url"];
+        if (string.IsNullOrEmpty(openSearchUrl))
+        {
+            throw new Exception("OpenSearch url is empty");
+        }
+
+        string? openSearchUser = configuration["OpenSearch:User"];
+        if (string.IsNullOrEmpty(openSearchUser))
+        {
+            throw new Exception("OpenSearch user is empty");
+        }
+
+        string? openSearchPassword = configuration["OpenSearch:Password"];
+        if (string.IsNullOrEmpty(openSearchPassword))
+        {
+            throw new Exception("OpenSearch password is empty");
+        }
+
+        var pool = new SingleNodeConnectionPool(new Uri(openSearchUrl));
+        var connectionSettings = new ConnectionSettings(pool, (builtin, settings) =>
+                new JsonNetSerializer(builtin, settings,
+                    modifyContractResolver: c => c.NamingStrategy = new SnakeCaseNamingStrategy()
+                )
+            )
+            .ServerCertificateValidationCallback((_, _, _, _) => true)
+            .BasicAuthentication(openSearchUser, openSearchPassword);
+        var client = new OpenSearchClient(connectionSettings);
+
+        services.AddSingleton(client);
+    }
+    public static string GetTestStorageName(this IConfiguration configuration)
+    {
+        return configuration["Storages:Test"] ??
+               throw new Exception("Test storage name not configured");
+    }
+
+}
