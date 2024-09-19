@@ -39,10 +39,10 @@ public static class OpenSearchExtension
 
         services.AddSingleton(client);
     }
-    public static string GetTestStorageName(this IConfiguration configuration)
+    public static string GetSmsStorageName(this IConfiguration configuration)
     {
-        return configuration["Storages:Test"] ??
-               throw new Exception("Test storage name not configured");
+        return configuration["Storages:Sms"] ??
+              throw new Exception("Sms storage name not configured");
     }
 
 }

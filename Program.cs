@@ -40,7 +40,6 @@ builder.Services.AddCors(c => c.AddPolicy("cors", opt =>
     opt.WithOrigins(builder.Configuration.GetSection("Cors:Urls").Get<string[]>()!);
 }));
 
-builder.Services.AddOpenSearch(builder.Configuration);
 builder.Services.AddHttpClient<SmsRuProvider>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["SmsRu:Url"] ?? throw new InvalidOperationException("SmsRu url not set"));
@@ -50,8 +49,10 @@ builder.Services.AddHttpClient<SmsRu2Provider>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["SmsRu2:Url"] ?? throw new InvalidOperationException("SmsRu2 url not set"));
 });
-builder.Services.AddScoped<SmsProviderFactory>();
-builder.Services.AddScoped<SmsService>();
+
+builder.Services.AddOpenSearch(builder.Configuration);
+builder.Services.AddSingleton<SmsProviderFactory>();
+builder.Services.AddSingleton<SmsService>();
 
 var app = builder.Build();
 var provider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();

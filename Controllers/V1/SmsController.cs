@@ -23,7 +23,7 @@ public class SmsController : ControllerBase
     [HttpPost("send")]
     public async Task<IActionResult> Send([FromBody] SmsRequest request)
     {
-        var result = await _smsService.SendSmsAsync(request.Phone, request.Message);
+        var result = await _smsService.SendSmsAsync(request);
         if (result == "success")
             return Ok(new { status = "success" });
 
@@ -43,5 +43,11 @@ public class SmsController : ControllerBase
     public IActionResult GetActiveProvider()
     {
         return Ok(new { activeProvider = _smsService.GetActiveProvider() });
+    }
+
+    [HttpGet("queue-status")]
+    public IActionResult GetQueueStatus()
+    {
+        return Ok(new { queued = _smsService.GetQueueStatus() });
     }
 }
