@@ -96,7 +96,6 @@ public class SmsService
         }
         catch
         {
-            // URL недоступен
             _isUrlAvailable = false;
         }
     }
@@ -159,10 +158,9 @@ public class SmsService
 
     public static string GenerateMessageId()
     {
-        // Получаем текущее время
         DateTime now = DateTime.UtcNow;
+        // Получаем таймстамп в миллисекундах 
 
-        // Получаем таймстамп в миллисекундах с начала эпохи Unix
         long timestamp = (long)(now - new DateTime(1970, 1, 1)).TotalMilliseconds;
 
         // Получаем миллисекунды текущего времени
