@@ -39,8 +39,8 @@ public class SmsService
 
     public async Task<string> SendSmsAsync(SmsRequest smsRequest)
     {
-
         var provider = _smsProviderFactory.GetProvider(_activeProvider);
+        smsRequest.MessId = GenerateMessageId();
 
         if (_isUrlAvailable)
         {
@@ -50,18 +50,18 @@ public class SmsService
             {
                 if (smsRequest.CallbackUrl != null)
                 {
-                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success");
+                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", null, smsRequest.MessId);
                 }
-                await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider);
+                await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, smsRequest.MessId);
                 return "success";
             }
             else
             {
                 if (smsRequest.CallbackUrl != null)
                 {
-                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, response.Status, response.StatusText);
+                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, response.Status, response.StatusText, smsRequest.MessId);
                 }
-                await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, response.StatusText);
+                await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, smsRequest.MessId, response.StatusText);
                 return response.StatusText;
             }
         }
@@ -76,14 +76,14 @@ public class SmsService
         return "queued";
     }
 
-    private async Task SendCallback(string callbackUrl, string phone, string status, string reason = null)
+    private async Task SendCallback(string callbackUrl, string phone, string status, string messId, string reason = null)
     {
         if (string.IsNullOrEmpty(callbackUrl)) return;
 
         var callbackData = new
         {
             phone,
-            mess_id = GenerateMessageId(), // utc+3
+            messId,
             status,
             reason
         };
@@ -110,7 +110,7 @@ public class SmsService
         {
             var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
             var status = response.Status == "OK" ? "success" : "failure";
-            await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status);
+            await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
             var dateTime = TimeZoneInfo.ConvertTime(DateTime.UtcNow, _utc3TimeZone);
             await LogSmsToOpenSearch(dateTime, status, _activeProvider, response.StatusText);
         }
@@ -136,10 +136,11 @@ public class SmsService
         return _activeProvider;
     }
 
-    private async Task LogSmsToOpenSearch(DateTime timestamp, string status, string providerCode, string errorMessage = null)
+    private async Task LogSmsToOpenSearch(DateTime timestamp, string status, string providerCode, string messId, string errorMessage = null)
     {
         SmsLog smsLog = new SmsLog
         {
+            MessId = messId, 
             Date = TimeZoneInfo.ConvertTime(timestamp, _utc3TimeZone),
             Status = status,
             Provider = providerCode,
