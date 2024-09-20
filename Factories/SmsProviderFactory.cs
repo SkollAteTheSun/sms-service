@@ -14,10 +14,10 @@ public class SmsProviderFactory
 
     public ISmsProvider GetProvider(string methodCode)
     {
-        return methodCode switch
+        return methodCode.ToLower() switch
         {
-            "SmsRu" => _serviceProvider.GetRequiredService<SmsRuProvider>(),
-            "SmsRu2" => _serviceProvider.GetRequiredService<SmsRu2Provider>(),
+            "smsru" => _serviceProvider.GetRequiredService<SmsRuProvider>(),
+            "smsru2" => _serviceProvider.GetRequiredService<SmsRu2Provider>(),
             _ => throw new NotSupportedException($"Provider with code {methodCode} is not supported")
         };
     }
