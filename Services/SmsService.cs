@@ -41,6 +41,11 @@ public class SmsService
     {
         var provider = _smsProviderFactory.GetProvider(_activeProvider);
         smsRequest.MessId = GenerateMessageId();
+        smsRequest.Phone = CleanPhoneNumber(smsRequest.Phone);
+
+        if (!ValidPhoneNumber(smsRequest.Phone)) return "Error: Invalid phone nubmer";
+
+        if (!string.IsNullOrEmpty(smsRequest.CallbackUrl) && !ValidUrl(smsRequest.CallbackUrl)) return "Error: Invalid callback URL";
 
         if (_isUrlAvailable)
         {
@@ -50,7 +55,7 @@ public class SmsService
             {
                 if (smsRequest.CallbackUrl != null)
                 {
-                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", null, smsRequest.MessId);
+                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", smsRequest.MessId);
                 }
                 await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, smsRequest.MessId);
                 return "success";
@@ -59,7 +64,7 @@ public class SmsService
             {
                 if (smsRequest.CallbackUrl != null)
                 {
-                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, response.Status, response.StatusText, smsRequest.MessId);
+                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, response.Status, smsRequest.MessId, response.StatusText);
                 }
                 await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, smsRequest.MessId, response.StatusText);
                 return response.StatusText;
@@ -170,5 +175,40 @@ public class SmsService
         string messageId = $"{timestamp:D13}{milliseconds:D3}";
 
         return messageId;
+    }
+
+    private string CleanPhoneNumber(string phoneNumber)
+    {
+        var cleanedNumber = new StringBuilder();
+
+        foreach (char c in phoneNumber)
+        {
+            if (char.IsDigit(c))
+            {
+                cleanedNumber.Append(c);
+            }
+        }
+        return cleanedNumber.ToString();
+    }
+
+    private bool ValidPhoneNumber(string phoneNumber)
+    {
+        if (phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8")))
+            return true;
+        else
+            return false;
+    }
+
+    private bool ValidUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return false;
+
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uriResult) &&
+            (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
+        {
+            return true;
+        }
+        return false;
     }
 }
