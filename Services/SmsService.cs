@@ -22,7 +22,6 @@ public class SmsService
     private IConfiguration _configuration;
 
     private readonly OpenSearchClient _openSearchClient;
-    private readonly TimeZoneInfo _utc3TimeZone = TimeZoneInfo.FindSystemTimeZoneById("Russian Standard Time");
 
     public SmsService(SmsProviderFactory smsProviderFactory, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient)
     {
@@ -50,7 +49,7 @@ public class SmsService
         if (_isUrlAvailable)
         {
             var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
-            var dateTime = TimeZoneInfo.ConvertTime(DateTime.UtcNow, _utc3TimeZone);
+            var dateTime = DateTime.UtcNow;
             if (response.Status == "OK")
             {
                 if (smsRequest.CallbackUrl != null)
@@ -77,7 +76,7 @@ public class SmsService
         }
 
         _smsQueue.Enqueue(smsRequest);
-        await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "queued", "No route to host");
+        await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "queued", smsRequest.MessId, "No route to host");
         return "queued";
     }
 
@@ -115,7 +114,7 @@ public class SmsService
             var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
             var status = response.Status == "OK" ? "success" : "failure";
             await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
-            var dateTime = TimeZoneInfo.ConvertTime(DateTime.UtcNow, _utc3TimeZone);
+            var dateTime = DateTime.UtcNow;
             await LogSmsToOpenSearch(dateTime, status, _activeProvider, response.StatusText);
         }
     }
@@ -145,7 +144,7 @@ public class SmsService
         SmsLog smsLog = new SmsLog
         {
             MessId = messId, 
-            Date = TimeZoneInfo.ConvertTime(timestamp, _utc3TimeZone),
+            Date = timestamp,
             Status = status,
             Provider = providerCode,
             ErrorMessage = errorMessage
