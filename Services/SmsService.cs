@@ -65,7 +65,7 @@ public class SmsService
                 {
                     await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, response.Status, smsRequest.MessId, response.StatusText);
                 }
-                await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, smsRequest.MessId, response.StatusText);
+                await LogSmsToOpenSearch(dateTime, smsRequest.Phone, response.Status, _activeProvider, smsRequest.MessId, response.StatusText);
                 return response.StatusText;
             }
         }
@@ -115,7 +115,7 @@ public class SmsService
             var status = response.Status == "OK" ? "success" : "failure";
             await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
             var dateTime = DateTime.UtcNow;
-            await LogSmsToOpenSearch(dateTime, smsRequest.Phone, status, _activeProvider, response.StatusText);
+            await LogSmsToOpenSearch(dateTime, smsRequest.Phone, status, _activeProvider, smsRequest.MessId, response.StatusText);
         }
     }
 
