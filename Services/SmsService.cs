@@ -56,7 +56,7 @@ public class SmsService
                 {
                     await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", smsRequest.MessId);
                 }
-                await LogSmsToOpenSearch(dateTime, response.Status, _activeProvider, smsRequest.MessId);
+                await LogSmsToOpenSearch(dateTime, smsRequest.Phone, response.Status, _activeProvider, smsRequest.MessId);
                 return "success";
             }
             else
@@ -115,7 +115,7 @@ public class SmsService
             var status = response.Status == "OK" ? "success" : "failure";
             await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
             var dateTime = DateTime.UtcNow;
-            await LogSmsToOpenSearch(dateTime, status, _activeProvider, response.StatusText);
+            await LogSmsToOpenSearch(dateTime, smsRequest.Phone, status, _activeProvider, response.StatusText);
         }
     }
 
@@ -139,11 +139,12 @@ public class SmsService
         return _activeProvider;
     }
 
-    private async Task LogSmsToOpenSearch(DateTime timestamp, string status, string providerCode, string messId, string errorMessage = null)
+    private async Task LogSmsToOpenSearch(DateTime timestamp, string phone, string status, string providerCode, string messId, string errorMessage = null)
     {
         SmsLog smsLog = new SmsLog
         {
             MessId = messId, 
+            Phone = phone,
             Date = timestamp,
             Status = status,
             Provider = providerCode,
