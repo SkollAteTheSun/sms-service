@@ -10,6 +10,9 @@ public class SmsLog
     [JsonProperty("phone")]
     public string Phone { get; set; }
 
+    [JsonProperty("text_message")]
+    public string TextMessage { get; set; }
+
     [JsonProperty("date")]
     public DateTime Date { get; set; }
 
