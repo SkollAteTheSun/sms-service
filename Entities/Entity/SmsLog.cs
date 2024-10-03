@@ -7,6 +7,12 @@ public class SmsLog
     [JsonProperty("mess_id")]
     public string MessId { get; set; }
 
+    [JsonProperty("phone")]
+    public string Phone { get; set; }
+
+    [JsonProperty("text_message")]
+    public string TextMessage { get; set; }
+
     [JsonProperty("date")]
     public DateTime Date { get; set; }
 
