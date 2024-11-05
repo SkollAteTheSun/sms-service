@@ -4,7 +4,7 @@ namespace Kp.Ms.Sms.Entities.Request;
 
 public class CallRequest
 {
-    [DefaultValue(89046331311)]
+    [DefaultValue(89991002233)]
     public string Phone { get; set; } = string.Empty;
 
     [DefaultValue(null)]

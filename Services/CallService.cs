@@ -13,7 +13,7 @@ namespace Kp.Ms.Sms.Services;
 public class CallService
 {
     private readonly ConcurrentQueue<CallRequest> _callQueue;
-    private const int MaxQueueSize = 1000;
+    private const int MaxQueueSize = 500;
     private bool _isServiceAvailable = true;
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
@@ -36,7 +36,7 @@ public class CallService
     {
         request.Phone = CleanPhoneNumber(request.Phone);
 
-        if (!ValidPhoneNumber(request.Phone) || !ValidIpAddress(request.UserIp)) // надо ли проверять IP адресс? можно на число например?
+        if (!ValidPhoneNumber(request.Phone) || !ValidIpAddress(request.UserIp))
             return new CallResponse
             {
                 Status = "failure",
@@ -105,7 +105,7 @@ public class CallService
     {
         if (_callQueue.IsEmpty || !_isServiceAvailable) return;
 
-        for (int i = 0; i < 10 && _callQueue.TryDequeue(out var request); i++)
+        for (int i = 0; i < 5 && _callQueue.TryDequeue(out var request); i++)
         {
             var response = await CallApiAsync(request.Phone, request.UserIp);
             var status = response.Status == "OK" ? "success" : "failure";
@@ -218,10 +218,8 @@ public class CallService
         return cleanedNumber.ToString();
     }
 
-    // надо ли проверять на Российский номер
     private bool ValidPhoneNumber(string phoneNumber) => phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8"));
 
-    //вместо ip можно отдавать -1, обязательный параметр
     private bool ValidIpAddress(string ipAddress) => !string.IsNullOrEmpty(ipAddress); 
 
     private bool ValidUrl(string? url)

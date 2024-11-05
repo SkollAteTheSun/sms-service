@@ -16,7 +16,7 @@ public class SmsService
     private readonly SmsProviderFactory _smsProviderFactory;
     private static string _activeProvider;
     private readonly ConcurrentQueue<SmsRequest> _smsQueue;
-    private const int MaxQueueSize = 500; // в 2 раза меньше чем смс
+    private const int MaxQueueSize = 1000;
     private bool _isUrlAvailable = true;
     private readonly HttpClient _httpClient;
     private System.Timers.Timer _queueTimer;
@@ -105,12 +105,12 @@ public class SmsService
         }
     }
 
-    private async void SendFromQueue() //по 5 штук
+    private async void SendFromQueue()
     {
         if (_smsQueue.IsEmpty || !_isUrlAvailable) return;
 
         var provider = _smsProviderFactory.GetProvider(_activeProvider);
-        for (int i = 0; i < 5 && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
+        for (int i = 0; i < 10 && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
         {
             var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
             var status = response.Status == "OK" ? "success" : "failure";
@@ -201,43 +201,5 @@ public class SmsService
             return true;
         }
         return false;
-    }
-
-    // пока чисто копия send sms, только для звонка
-    public async Task<string> CallUserAsync(string phone, string userIp, string callbackUrl = null)
-    {
-        var apiId = _configuration["SmsRu:ApiId"];
-        var requestUrl = $"{_configuration["SmsRu:Url"]}/code/call?phone={phone}&ip={userIp}&api_id={apiId}";
-
-        try
-        {
-            var response = await _httpClient.GetAsync(requestUrl);
-            var responseData = await response.Content.ReadAsStringAsync();
-            var callResponse = JsonConvert.DeserializeObject<CallResponse>(responseData);
-
-            if (callResponse.Status == "OK")
-            {
-                if (callbackUrl != null)
-                    await SendCallback(callbackUrl, phone, "success", callResponse.CallId);
-
-                return "success";
-            }
-            else
-            {
-                // Обработка ошибки и отправка callback
-                if (callbackUrl != null)
-                    await SendCallback(callbackUrl, phone, "failure", null, callResponse.StatusText);
-
-                // Добавление в очередь, если вызов не удался
-                if (_smsQueue.Count < MaxQueueSize)
-                    _smsQueue.Enqueue(new SmsRequest { Phone = phone, CallbackUrl = callbackUrl });
-                return "queued";
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error calling user: {ex.Message}");
-            return "failure";
-        }
     }
 }

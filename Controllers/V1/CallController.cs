@@ -19,19 +19,7 @@ public class CallController : ControllerBase
         _callService = callService;
     }
 
-    /*
-    [HttpPost("initiate")]
-    public async Task<IActionResult> InitiateCall([FromBody] CallRequest request)
-    {
-        var result = await _callService.InitiateCallAsync(request);
-        if (result == "success")
-            return Ok(new { status = "success" });
-
-        return BadRequest(new { status = "failure", reason = result });
-    }
-    */
-
-    [HttpPost("initiate")]
+    [HttpPost("call")]
     public async Task<IActionResult> InitiateCall([FromBody] CallRequest request)
     {
         var response = await _callService.InitiateCallAsync(request);
