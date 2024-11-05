@@ -95,7 +95,7 @@ public class CallService
             };
         }
 
-        return new CallResponse //Если сервис недоступен и в очереди есть место
+        return new CallResponse //если сервис недоступен и в очереди есть место
         {
             Status = "queued",
             StatusText = "Call has been queued"
