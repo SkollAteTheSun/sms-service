@@ -76,6 +76,7 @@ public class CallService
                     };
                 }
 
+                // если в очереди есть место
                 await HandleCallbackAndLogging(request.CallbackUrl, request, response);
                 return new CallResponse
                 {
@@ -85,7 +86,7 @@ public class CallService
             }
         }
 
-        if (!EnqueueCall(request)) //Если сервис недоступен и очередь переполнена 
+        if (!EnqueueCall(request)) //если сервис недоступен и очередь переполнена 
         {
             return new CallResponse
             {
@@ -94,7 +95,7 @@ public class CallService
             };
         }
 
-        return new CallResponse //Если сервис недоступен и запрос можем добавить в очередь
+        return new CallResponse //Если сервис недоступен и в очереди есть место
         {
             Status = "queued",
             StatusText = "Call has been queued"
