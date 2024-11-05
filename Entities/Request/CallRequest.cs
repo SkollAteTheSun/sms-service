@@ -1,17 +1,15 @@
 ﻿using System.ComponentModel;
-using System.Text.Json.Serialization;
 
 namespace Kp.Ms.Sms.Entities.Request;
 
-public class SmsRequest
+public class CallRequest
 {
+    [DefaultValue(89046331311)]
     public string Phone { get; set; } = string.Empty;
-
-    public string Message { get; set; } = string.Empty;
 
     [DefaultValue(null)]
     public string? CallbackUrl { get; set; }
 
-    [JsonIgnore]
-    public string MessId { get; set; } = string.Empty;
+    [DefaultValue(-1)]
+    public string UserIp { get; set; } = string.Empty;
 }

@@ -4,6 +4,7 @@ using Kp.Ms.Sms.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Kp.Ms.Sms.Entities.Request;
+using OpenSearch.Client;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
@@ -27,7 +28,7 @@ public class SmsController : ControllerBase
         if (result == "success")
             return Ok(new { status = "success" });
 
-        return BadRequest(new { status = "failure", reason = result });
+        return StatusCode(500, new { status = "failure", reason = result });
     }
 
     [HttpPost("switch")]
