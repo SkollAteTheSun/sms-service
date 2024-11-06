@@ -1,5 +1,6 @@
 ﻿using Asp.Versioning;
 using Kp.Ms.Sms.Entities.Request;
+using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -24,11 +25,34 @@ public class CallController : ControllerBase
     {
         var response = await _callService.InitiateCallAsync(request);
 
-        if (response.Status == "OK")
+        switch (response.Status)
         {
-            return Ok(response);
+            case "OK":
+                return Ok(response);
+
+            case "failure":
+                if (response.StatusText.Contains("Invalid phone number or IP address") ||
+                    response.StatusText.Contains("Invalid callback URL"))
+                {
+                    return BadRequest(response);
+                }
+                if (response.StatusText.Contains("Queue limit reached"))
+                {
+                    return StatusCode(503, response); 
+                }
+
+                return StatusCode(500, response);
+
+            case "queued":
+                return Accepted(response);
+
+            default:
+                return StatusCode(500, new CallResponse
+                {
+                    Status = "failure",
+                    StatusText = "Unexpected error occurred"
+                });
         }
-        return StatusCode(500, response);
     }
 
     [HttpGet("queue-status")]

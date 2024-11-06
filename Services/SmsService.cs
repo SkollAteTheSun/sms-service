@@ -16,7 +16,7 @@ public class SmsService
     private readonly SmsProviderFactory _smsProviderFactory;
     private static string _activeProvider;
     private readonly ConcurrentQueue<SmsRequest> _smsQueue;
-    private const int MaxQueueSize = 1000;
+    private readonly int _maxQueueSize;
     private bool _isUrlAvailable = true;
     private readonly HttpClient _httpClient;
     private System.Timers.Timer _queueTimer;
@@ -29,6 +29,7 @@ public class SmsService
         _configuration = configuration;
         _smsProviderFactory = smsProviderFactory;
         _activeProvider = configuration["ActiveSmsProvider"] ?? "smsru";
+        _maxQueueSize = _configuration.GetValue<int>("QueueSettings:SmsMaxSize");
         _smsQueue = new ConcurrentQueue<SmsRequest>();
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
@@ -71,7 +72,7 @@ public class SmsService
             }
         }
 
-        if (_smsQueue.Count >= MaxQueueSize)
+        if (_smsQueue.Count >= _maxQueueSize)
         {
             return "500: Queue limit reached";
         }

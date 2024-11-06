@@ -27,6 +27,8 @@ public class SmsController : ControllerBase
         var result = await _smsService.SendSmsAsync(request);
         if (result == "success")
             return Ok(new { status = "success" });
+        if (result == "queued")
+            return Accepted(new { status = "success" });
 
         return StatusCode(500, new { status = "failure", reason = result });
     }

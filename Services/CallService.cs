@@ -13,7 +13,7 @@ namespace Kp.Ms.Sms.Services;
 public class CallService
 {
     private readonly ConcurrentQueue<CallRequest> _callQueue;
-    private const int MaxQueueSize = 500;
+    private readonly int _maxQueueSize;
     private bool _isServiceAvailable = true;
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
@@ -26,6 +26,7 @@ public class CallService
         _callQueue = new ConcurrentQueue<CallRequest>();
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
+        _maxQueueSize = _configuration.GetValue<int>("QueueSettings:CallMaxSize");
 
         _queueTimer = new System.Timers.Timer(60000);
         _queueTimer.Elapsed += (sender, e) => ProcessQueue();
@@ -126,7 +127,7 @@ public class CallService
 
     private bool EnqueueCall(CallRequest request)
     {
-        if (_callQueue.Count >= MaxQueueSize)
+        if (_callQueue.Count >= _maxQueueSize)
         {
             return false;
         }
