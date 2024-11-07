@@ -15,7 +15,7 @@ public class SmsRu2Provider : ISmsProvider
         _client = client;
     }
 
-    public async Task<SmsRuResponse> SendSmsAsync(string phone, string message)
+    public async Task<SmsResponse> SendSmsAsync(string phone, string message)
     {
         var parameters = new Dictionary<string, string>
             {
@@ -35,6 +35,6 @@ public class SmsRu2Provider : ISmsProvider
         var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();
-        return JsonConvert.DeserializeObject<SmsRuResponse>(jsonString) ?? throw new Exception("No sms ru2 response");
+        return JsonConvert.DeserializeObject<SmsResponse>(jsonString) ?? throw new Exception("No sms ru2 response");
     }
 }

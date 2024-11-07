@@ -1,5 +1,6 @@
 ﻿using Kp.Ms.Sms.Entities.Entity;
 using Kp.Ms.Sms.Entities.Request;
+using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
 using Newtonsoft.Json;
@@ -15,7 +16,7 @@ public class SmsService
     private readonly SmsProviderFactory _smsProviderFactory;
     private static string _activeProvider;
     private readonly ConcurrentQueue<SmsRequest> _smsQueue;
-    private const int MaxQueueSize = 1000;
+    private readonly int _maxQueueSize;
     private bool _isUrlAvailable = true;
     private readonly HttpClient _httpClient;
     private System.Timers.Timer _queueTimer;
@@ -28,6 +29,7 @@ public class SmsService
         _configuration = configuration;
         _smsProviderFactory = smsProviderFactory;
         _activeProvider = configuration["ActiveSmsProvider"] ?? "smsru";
+        _maxQueueSize = _configuration.GetValue<int>("QueueSettings:SmsMaxSize");
         _smsQueue = new ConcurrentQueue<SmsRequest>();
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
@@ -70,7 +72,7 @@ public class SmsService
             }
         }
 
-        if (_smsQueue.Count >= MaxQueueSize)
+        if (_smsQueue.Count >= _maxQueueSize)
         {
             return "500: Queue limit reached";
         }
@@ -119,10 +121,7 @@ public class SmsService
         }
     }
 
-    public int GetQueueStatus()
-    {
-        return _smsQueue.Count;
-    }
+    public int GetQueueStatus() => _smsQueue.IsEmpty ? 0 : _smsQueue.Count;
 
     public bool SwitchProvider(string methodCode)
     {
@@ -151,8 +150,6 @@ public class SmsService
             Provider = providerCode,
             ErrorMessage = errorMessage
         };
-
-        var indexName = $"sms-logs-{DateTime.UtcNow:yyyy-MM-dd}";
 
         var response = await _openSearchClient.IndexAsync(smsLog, idx => idx.Index(_configuration.GetSmsStorageName()));
 
@@ -192,13 +189,7 @@ public class SmsService
         return cleanedNumber.ToString();
     }
 
-    private bool ValidPhoneNumber(string phoneNumber)
-    {
-        if (phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8")))
-            return true;
-        else
-            return false;
-    }
+    private bool ValidPhoneNumber(string phoneNumber) => phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8"));
 
     private bool ValidUrl(string? url)
     {

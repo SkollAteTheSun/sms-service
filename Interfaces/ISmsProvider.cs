@@ -4,5 +4,5 @@ namespace Kp.Ms.Sms.Interfaces;
 
 public interface ISmsProvider
 {
-    Task<SmsRuResponse> SendSmsAsync(string phone, string message);
+    Task<SmsResponse> SendSmsAsync(string phone, string message);
 }

@@ -45,4 +45,10 @@ public static class OpenSearchExtension
               throw new Exception("Sms storage name not configured");
     }
 
+    public static string GetCallStorageName(this IConfiguration configuration)
+    {
+        return configuration["Storages:Call"] ??
+              throw new Exception("Call storage name not configured");
+    }
+
 }
