@@ -53,4 +53,10 @@ public class SmsController : ControllerBase
     {
         return Ok(new { queued = _smsService.GetQueueStatus() });
     }
+
+    [HttpGet("queue-callback-status")]
+    public IActionResult GetCallbackQueueStatus()
+    {
+        return Ok(new { queued = _smsService.GetCallbackQueueStatus() });
+    }
 }
