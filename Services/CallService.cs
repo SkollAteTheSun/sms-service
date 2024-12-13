@@ -1,13 +1,11 @@
 ﻿using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Entities.Entity;
-using Kp.Ms.Sms.Factories;
 using Newtonsoft.Json;
 using OpenSearch.Client;
 using System.Collections.Concurrent;
 using System.Text;
 using Kp.Ms.Sms.Extensions;
-using System.Net;
 
 namespace Kp.Ms.Sms.Services;
 
@@ -28,6 +26,8 @@ public class CallService
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
         _maxQueueSize = _configuration.GetValue<int>("QueueSettings:CallMaxSize");
+        _callQueue = new ConcurrentQueue<CallRequest>();
+        _callbackQueue = new ConcurrentQueue<(string CallbackUrl, object CallbackData)>();
 
         _queueTimer = new System.Timers.Timer(60000);
         _queueTimer.Elapsed += (sender, e) => ProcessQueue(); // звонки
@@ -57,7 +57,6 @@ public class CallService
             };
         }
 
-        request.CallId = GenerateCallId();
         var response = await CallApiAsync(request.Phone, request.UserIp);
 
         // Звонок совершен успешно
@@ -80,7 +79,7 @@ public class CallService
                     StatusText = "500: Queue limit reached"
                 };
 
-                await LogCallToOpenSearch(request.Phone, queueErrorResponse.Status, request.CallId, response.Code, queueErrorResponse.StatusText);
+                await LogCallToOpenSearch(request.Phone, queueErrorResponse.Status, response.CallId, response.Code, queueErrorResponse.StatusText);
 
                 return queueErrorResponse;
             }
@@ -97,7 +96,7 @@ public class CallService
         }
 
         // Непредвиденные ошибки
-        await LogCallToOpenSearch(request.Phone, response.Status, request.CallId, response.Code, response.StatusText);
+        await LogCallToOpenSearch(request.Phone, response.Status, response.CallId, response.Code, response.StatusText);
         return response;
     }
 
@@ -124,7 +123,7 @@ public class CallService
                     errorMessage = response.StatusText
                 });
 
-                await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", request.CallId, response.Code, response.StatusText);
+                await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", response.CallId, response.Code, response.StatusText);
             }
 
             await Task.Delay(1000);
@@ -240,22 +239,6 @@ public class CallService
 
         await LogCallToOpenSearch(request.Phone, response.Status, response.CallId, response.Code, response.StatusText);
         return (true, null);
-    }
-
-    public static string GenerateCallId()
-    {
-        DateTime now = DateTime.UtcNow;
-        // Получаем таймстамп в миллисекундах 
-
-        long timestamp = (long)(now - new DateTime(1970, 1, 1)).TotalMilliseconds;
-
-        // Получаем миллисекунды текущего времени
-        int milliseconds = now.Millisecond;
-
-        // Форматируем идентификатор с учетом 5 знаков миллисекунд
-        string callId = $"{timestamp:D13}{milliseconds:D3}";
-
-        return callId;
     }
 
     private string CleanPhoneNumber(string phoneNumber)

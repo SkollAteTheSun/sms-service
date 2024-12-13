@@ -1,11 +1,9 @@
 ﻿using Kp.Ms.Sms.Entities.Entity;
 using Kp.Ms.Sms.Entities.Request;
-using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
 using Newtonsoft.Json;
 using OpenSearch.Client;
-using System;
 using System.Collections.Concurrent;
 using System.Text;
 
@@ -132,32 +130,61 @@ public class SmsService
         if (_smsQueue.IsEmpty) return;
 
         var provider = _smsProviderFactory.GetProvider(_activeProvider);
-        for (int i = 0; i < 10 && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
-        {
-            var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
-            var status = response.Status == "OK" ? "success" : "failure";
 
-            if (response.Status == "OK" && smsRequest.CallbackUrl != null)
+        while (!_smsQueue.IsEmpty)
+        {
+            var batch = new List<SmsRequest>();
+
+            for (int i = 0; i < 10 && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
             {
-                await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
+                batch.Add(smsRequest);
             }
 
-            var dateTime = DateTime.UtcNow;
-            await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, status, _activeProvider, smsRequest.MessId, response.StatusText);
+            foreach (var smsRequest in batch)
+            {
+                var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
+                var status = response.Status == "OK" ? "success" : "failure";
+
+                if (response.Status == "OK" && smsRequest.CallbackUrl != null)
+                {
+                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
+                }
+
+                var dateTime = DateTime.UtcNow;
+                await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, status, _activeProvider, smsRequest.MessId, response.StatusText);
+            }
+
+            await Task.Delay(1000);
         }
     }
+
 
     private async void SendFromCallbackQueue()
     {
-        for (int i = 0; i < 10 && _smsCallbackQueue.TryDequeue(out SmsCallbackRequest callbackRequest); i++)
+        if (_smsCallbackQueue.IsEmpty) return;
+
+        while (!_smsCallbackQueue.IsEmpty)
         {
-            var (success, statusText) = await SendCallback(callbackRequest.CallbackUrl, callbackRequest.Phone, callbackRequest.Status, callbackRequest.MessId, callbackRequest.Reason);
-            if (!success)
+            var batch = new List<SmsCallbackRequest>();
+
+            for (int i = 0; i < 10 && _smsCallbackQueue.TryDequeue(out SmsCallbackRequest callbackRequest); i++)
             {
-                _smsCallbackQueue.Enqueue(callbackRequest);
+                batch.Add(callbackRequest);
             }
+
+            foreach (var callbackRequest in batch)
+            {
+                var (success, statusText) = await SendCallback(callbackRequest.CallbackUrl, callbackRequest.Phone, callbackRequest.Status, callbackRequest.MessId, callbackRequest.Reason);
+                if (!success)
+                {
+                    _smsCallbackQueue.Enqueue(callbackRequest);
+                }
+            }
+
+            await Task.Delay(1000);
         }
     }
+
 
     public int GetQueueStatus() => _smsQueue.IsEmpty ? 0 : _smsQueue.Count;
     public int GetCallbackQueueStatus() => _smsCallbackQueue.IsEmpty ? 0 : _smsCallbackQueue.Count;

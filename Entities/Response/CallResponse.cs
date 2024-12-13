@@ -1,29 +1,24 @@
-﻿using System.Text.Json.Serialization;
+﻿using Newtonsoft.Json;
 
 namespace Kp.Ms.Sms.Entities.Response;
 
 public class CallResponse
 {
-    [JsonPropertyName("status")]
+    [JsonProperty("status")]
     public string Status { get; set; }
 
-    [JsonPropertyName("code")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonProperty("code", NullValueHandling = NullValueHandling.Ignore)]
     public string? Code { get; set; }
 
-    [JsonPropertyName("call_id")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonProperty("call_id", NullValueHandling = NullValueHandling.Ignore)]
     public string? CallId { get; set; }
 
-    [JsonPropertyName("cost")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonProperty("cost", NullValueHandling = NullValueHandling.Ignore)]
     public double? Cost { get; set; }
 
-    [JsonPropertyName("balance")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonProperty("balance", NullValueHandling = NullValueHandling.Ignore)]
     public double? Balance { get; set; }
 
-    [JsonPropertyName("status_text")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonProperty("status_text", NullValueHandling = NullValueHandling.Ignore)]
     public string? StatusText { get; set; }
 }

@@ -4,7 +4,6 @@ using Asp.Versioning.ApiExplorer;
 using Kp.Ms.Sms.Config;
 using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
-using Kp.Ms.Sms.Interfaces;
 using Kp.Ms.Sms.Services;
 using Kp.Ms.Sms.Middlewares;
 using Microsoft.OpenApi.Models;
@@ -13,7 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services
     .AddControllers()
-    .AddJsonOptions(options => { options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
+    .AddJsonOptions(options => { 
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault;
+    });
 
 builder.Services
     .AddApiVersioning(options =>

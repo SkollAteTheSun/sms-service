@@ -25,6 +25,11 @@ public class CallController : ControllerBase
     {
         var response = await _callService.InitiateCallAsync(request);
 
+        if (string.IsNullOrEmpty(response.StatusText))
+        {
+            response.StatusText = "Unexpected error occurred";
+        }
+
         switch (response.Status)
         {
             case "OK":
@@ -45,7 +50,7 @@ public class CallController : ControllerBase
                 return StatusCode(500, new CallResponse
                 {
                     Status = "failure",
-                    StatusText = "Unexpected error occurred"
+                    StatusText = response.StatusText,
                 });
         }
     }
