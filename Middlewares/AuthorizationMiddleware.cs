@@ -1,5 +1,4 @@
 ﻿using System.Net;
-using Microsoft.Extensions.Configuration;
 
 namespace Kp.Ms.Sms.Middlewares;
 
@@ -16,7 +15,6 @@ public class AuthorizationMiddleware
     {
         try
         {
-            // Получаем заголовок Authorization
             var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
 
             if (string.IsNullOrEmpty(authHeader))
@@ -39,7 +37,6 @@ public class AuthorizationMiddleware
                 return;
             }
 
-            // Проверяем токен
             var validToken = ValidateToken(token, configuration);
             if (!validToken)
             {
@@ -47,22 +44,16 @@ public class AuthorizationMiddleware
                 return;
             }
 
-            // Передаем управление следующему middleware
             await _next(context);
         }
         catch (Exception ex)
         {
-            // Логирование ошибки (по желанию)
-            Console.WriteLine($"Error in AuthorizationMiddleware: {ex.Message}");
-
-            // Возврат ошибки сервера
             await RespondWithErrorAsync(context, HttpStatusCode.InternalServerError, "An unexpected error occurred during authorization.");
         }
     }
 
     private bool ValidateToken(string token, IConfiguration configuration)
     {
-        // Проверка токена (пример - сравнение с токеном в конфигурации)
         var validToken = configuration["Authorization:Token"];
         return token == validToken;
     }
