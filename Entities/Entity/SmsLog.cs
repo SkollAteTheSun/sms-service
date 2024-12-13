@@ -15,7 +15,7 @@ public class SmsLog
 
     [JsonProperty("date")]
     public DateTime Date { get; set; }
-
+        
     [JsonProperty("status")]
     public string Status { get; set; }
 

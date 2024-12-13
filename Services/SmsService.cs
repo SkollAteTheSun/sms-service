@@ -16,8 +16,8 @@ public class SmsService
     private readonly SmsProviderFactory _smsProviderFactory;
     private static string _activeProvider;
     private readonly ConcurrentQueue<SmsRequest> _smsQueue;
+    private readonly ConcurrentQueue<SmsCallbackRequest> _smsCallbackQueue;
     private readonly int _maxQueueSize;
-    private bool _isUrlAvailable = true;
     private readonly HttpClient _httpClient;
     private System.Timers.Timer _queueTimer;
     private IConfiguration _configuration;
@@ -33,8 +33,10 @@ public class SmsService
         _smsQueue = new ConcurrentQueue<SmsRequest>();
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
+
         _queueTimer = new System.Timers.Timer(60000);
-        _queueTimer.Elapsed += (sender, e) => SendFromQueue();
+        _queueTimer.Elapsed += (sender, e) => SendFromQueue(); // смс
+        _queueTimer.Elapsed += (sender, e) => SendFromCallbackQueue(); // callback-и
         _queueTimer.Start();
     }
 
@@ -48,80 +50,118 @@ public class SmsService
 
         if (!string.IsNullOrEmpty(smsRequest.CallbackUrl) && !ValidUrl(smsRequest.CallbackUrl)) return "Error: Invalid callback URL";
 
-        if (_isUrlAvailable)
+
+        var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
+        var dateTime = DateTime.UtcNow;
+
+        // Отправка смс прошла успешна
+        if (response.Status == "OK")
         {
-            var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
-            var dateTime = DateTime.UtcNow;
-            if (response.Status == "OK")
+            if (smsRequest.CallbackUrl != null)
             {
-                if (smsRequest.CallbackUrl != null)
-                {
-                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", smsRequest.MessId);
-                }
-                await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, response.Status, _activeProvider, smsRequest.MessId);
-                return "success";
+                 await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", smsRequest.MessId);
             }
-            else
-            {
-                if (smsRequest.CallbackUrl != null)
-                {
-                    await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, response.Status, smsRequest.MessId, response.StatusText);
-                }
-                await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, response.Status, _activeProvider, smsRequest.MessId, response.StatusText);
-                return response.StatusText;
-            }
+            await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, response.Status, _activeProvider, smsRequest.MessId);
+            return "success";
         }
 
-        if (_smsQueue.Count >= _maxQueueSize)
+        // 220 Сервис временно недоступен, попробуйте чуть позже
+        // 500 Ошибка на сервере. Повторите запрос
+        if (response.StatusCode == 220 || response.StatusCode == 500)
         {
-            return "500: Queue limit reached";
+            // Если очередь переплнена, возвращаем ошибку
+            if (_smsQueue.Count >= _maxQueueSize)
+            {
+                return "500: Queue limit reached";
+            }
+
+            // Есть место в очереди - добавляем в очередеь
+            _smsQueue.Enqueue(smsRequest);
+
+            if (smsRequest.CallbackUrl != null)
+            {
+                await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "success", smsRequest.MessId);
+            }
+            await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, "queued", _activeProvider, smsRequest.MessId, "No route to host");
+            return "queued";
         }
 
-        _smsQueue.Enqueue(smsRequest);
-        await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, "queued", smsRequest.MessId, "No route to host");
-        return "queued";
+        // Непредвиденные ошибки
+        await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, "error", _activeProvider, smsRequest.MessId, response.Status);
+        return response.Status;
     }
 
-    private async Task SendCallback(string callbackUrl, string phone, string status, string messId, string reason = null)
+    private async Task<(bool Success, string? StatusText)> SendCallback(string callbackUrl, string phone, string status, string messId, string reason = null)
     {
-        if (string.IsNullOrEmpty(callbackUrl)) return;
-
-        var callbackData = new
+        if (string.IsNullOrEmpty(callbackUrl))
         {
-            phone,
-            messId,
-            status,
-            reason
+            return (false, "Callback URL is null or empty");
+        }
+
+        var callbackData = new SmsCallbackRequest
+        {
+            CallbackUrl = callbackUrl,
+            Phone = phone,
+            Status = status,
+            MessId = messId,
+            Reason = reason
         };
 
         var jsonContent = new StringContent(JsonConvert.SerializeObject(callbackData), Encoding.UTF8, "application/json");
+
         try
         {
             var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
             response.EnsureSuccessStatusCode();
+            return (true, "Callback successfully sent");
         }
-        catch
+        catch (Exception ex)
         {
-            _isUrlAvailable = false;
+            if (_smsCallbackQueue.Count >= _maxQueueSize)
+            {
+                return (false, "Callback queue limit reached");
+            }
+            _smsCallbackQueue.Enqueue(callbackData);
+            return (false, $"Callback failed and added to queue: {ex.Message}");
         }
     }
 
+
     private async void SendFromQueue()
     {
-        if (_smsQueue.IsEmpty || !_isUrlAvailable) return;
+        if (_smsQueue.IsEmpty) return;
 
         var provider = _smsProviderFactory.GetProvider(_activeProvider);
         for (int i = 0; i < 10 && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
         {
             var response = await provider.SendSmsAsync(smsRequest.Phone, smsRequest.Message);
             var status = response.Status == "OK" ? "success" : "failure";
-            await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
+
+            if (response.Status == "OK" && smsRequest.CallbackUrl != null)
+            {
+                await SendCallback(smsRequest.CallbackUrl, smsRequest.Phone, status, smsRequest.MessId);
+            }
+
             var dateTime = DateTime.UtcNow;
             await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, status, _activeProvider, smsRequest.MessId, response.StatusText);
         }
     }
 
+    private async void SendFromCallbackQueue()
+    {
+        for (int i = 0; i < 10 && _smsCallbackQueue.TryDequeue(out SmsCallbackRequest callbackRequest); i++)
+        {
+            var (success, statusText) = await SendCallback(callbackRequest.CallbackUrl, callbackRequest.Phone, callbackRequest.Status, callbackRequest.MessId, callbackRequest.Reason);
+            if (!success)
+            {
+                _smsCallbackQueue.Enqueue(callbackRequest);
+            }
+        }
+    }
+
     public int GetQueueStatus() => _smsQueue.IsEmpty ? 0 : _smsQueue.Count;
+    public int GetCallbackQueueStatus() => _smsCallbackQueue.IsEmpty ? 0 : _smsCallbackQueue.Count;
+
 
     public bool SwitchProvider(string methodCode)
     {
@@ -142,7 +182,7 @@ public class SmsService
     {
         SmsLog smsLog = new SmsLog
         {
-            MessId = messId, 
+            MessId = messId,
             Phone = phone,
             TextMessage = textMessage,
             Date = timestamp,

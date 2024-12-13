@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Text.Json.Serialization;
 
 namespace Kp.Ms.Sms.Entities.Request;
 
@@ -12,4 +13,7 @@ public class CallRequest
 
     [DefaultValue(-1)]
     public string UserIp { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public string CallId { get; set; } = string.Empty;
 }

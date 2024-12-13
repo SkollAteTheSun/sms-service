@@ -7,14 +7,15 @@ using OpenSearch.Client;
 using System.Collections.Concurrent;
 using System.Text;
 using Kp.Ms.Sms.Extensions;
+using System.Net;
 
 namespace Kp.Ms.Sms.Services;
 
 public class CallService
 {
     private readonly ConcurrentQueue<CallRequest> _callQueue;
+    private readonly ConcurrentQueue<(string CallbackUrl, object CallbackData)> _callbackQueue;
     private readonly int _maxQueueSize;
-    private bool _isServiceAvailable = true;
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private readonly IConfiguration _configuration;
@@ -29,7 +30,8 @@ public class CallService
         _maxQueueSize = _configuration.GetValue<int>("QueueSettings:CallMaxSize");
 
         _queueTimer = new System.Timers.Timer(60000);
-        _queueTimer.Elapsed += (sender, e) => ProcessQueue();
+        _queueTimer.Elapsed += (sender, e) => ProcessQueue(); // звонки
+        _queueTimer.Elapsed += (sender, e) => ProcessCallbackQueue(); // callback-и
         _queueTimer.Start();
     }
 
@@ -38,81 +40,94 @@ public class CallService
         request.Phone = CleanPhoneNumber(request.Phone);
 
         if (!ValidPhoneNumber(request.Phone) || !ValidIpAddress(request.UserIp))
+        {
             return new CallResponse
             {
                 Status = "failure",
                 StatusText = "Invalid phone number or IP address"
             };
+        }
 
         if (!string.IsNullOrEmpty(request.CallbackUrl) && !ValidUrl(request.CallbackUrl))
+        {
             return new CallResponse
             {
                 Status = "failure",
                 StatusText = "Invalid callback URL"
             };
+        }
 
-        if (_isServiceAvailable)
+        request.CallId = GenerateCallId();
+        var response = await CallApiAsync(request.Phone, request.UserIp);
+
+        // Звонок совершен успешно
+        if (response.Status == "OK")
         {
-            var response = await CallApiAsync(request.Phone, request.UserIp);
-            if (response.Status == "OK")
-            {
-                await HandleCallbackAndLogging(request.CallbackUrl, request, response);
-                return response;
-            }
-            else if (response.Status == "ERROR" && response.StatusText?.Contains("Слишком много звонков") == true) 
-                // чтобы не добавлять в очередь, если превышен лимит на день
-            {
-                await HandleCallbackAndLogging(request.CallbackUrl, request, response);
-                return response;
-            }
-            else // если статус неуспешный
-            {
-                if (!EnqueueCall(request)) // если очередь заполнена
-                {
-                    await HandleCallbackAndLogging(request.CallbackUrl, request, response);
-                    return new CallResponse
-                    {
-                        Status = "failure",
-                        StatusText = "Queue limit reached"
-                    };
-                }
+            await HandleCallbackAndLogging(request.CallbackUrl, request, response);
+            return response;
+        }
 
-                // если в очереди есть место
-                await HandleCallbackAndLogging(request.CallbackUrl, request, response);
-                return new CallResponse
+        // 220 Сервис временно недоступен, попробуйте чуть позже
+        // 500 Ошибка на сервере. Повторите запрос
+        if (response.Code == "220" || response.Code == "500")
+        {
+            // Если очередь переплнена, возвращаем ошибку
+            if (!EnqueueCall(request))
+            {
+                var queueErrorResponse = new CallResponse
                 {
-                    Status = "queued",
-                    StatusText = "Call has been queued"
+                    Status = "failure",
+                    StatusText = "500: Queue limit reached"
                 };
+
+                await LogCallToOpenSearch(request.Phone, queueErrorResponse.Status, request.CallId, response.Code, queueErrorResponse.StatusText);
+
+                return queueErrorResponse;
             }
-        }
 
-        if (!EnqueueCall(request)) //если сервис недоступен и очередь переполнена 
-        {
-            return new CallResponse
+            // Есть место в очереди - добавляем в очередеь
+            var queuedResponse = new CallResponse
             {
-                Status = "failure",
-                StatusText = "Queue limit reached"
+                Status = "queued",
+                StatusText = "Call has been queued"
             };
+
+            await HandleCallbackAndLogging(request.CallbackUrl, request, queuedResponse);
+            return queuedResponse;
         }
 
-        return new CallResponse //если сервис недоступен и в очереди есть место
-        {
-            Status = "queued",
-            StatusText = "Call has been queued"
-        };
+        // Непредвиденные ошибки
+        await LogCallToOpenSearch(request.Phone, response.Status, request.CallId, response.Code, response.StatusText);
+        return response;
     }
+
 
     private async void ProcessQueue()
     {
-        if (_callQueue.IsEmpty || !_isServiceAvailable) return;
-
-        for (int i = 0; i < 5 && _callQueue.TryDequeue(out var request); i++)
+        while (!_callQueue.IsEmpty)
         {
-            var response = await CallApiAsync(request.Phone, request.UserIp);
-            var status = response.Status == "OK" ? "success" : "failure";
-            await SendCallback(request.Phone, request.Phone, response.Status, response.CallId, response.Code, response.StatusText);
-            await LogCallToOpenSearch(request.Phone, status, response.CallId, response.Code, response.StatusText);
+            var batch = new List<CallRequest>();
+            for (int i = 0; i < 10 && _callQueue.TryDequeue(out var request); i++)
+            {
+                batch.Add(request);
+            }
+
+            foreach (var request in batch)
+            {
+                var response = await CallApiAsync(request.Phone, request.UserIp);
+                var(callbackSuccess, statusText) = await SendCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    callId = response.CallId,
+                    status = response.Status,
+                    code = response.Code,
+                    errorMessage = response.StatusText
+                });
+
+                await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", request.CallId, response.Code, response.StatusText);
+            }
+
+            await Task.Delay(1000);
         }
     }
 
@@ -135,10 +150,35 @@ public class CallService
         return true;
     }
 
-    public int GetQueueStatus() => _callQueue.IsEmpty ? 0 : _callQueue.Count;
+    public int GetCallQueueStatus() => _callQueue.IsEmpty ? 0 : _callQueue.Count;
+    public int GetCallbackQueueStatus() => _callbackQueue.IsEmpty ? 0 : _callbackQueue.Count;
+
+    private async Task ProcessCallbackQueue()
+    {
+        while (!_callbackQueue.IsEmpty)
+        {
+            var batch = new List<(string CallbackUrl, object CallbackData)>();
+            for (int i = 0; i < 10 && _callbackQueue.TryDequeue(out var callbackItem); i++)
+            {
+                batch.Add(callbackItem);
+            }
+
+            foreach (var (callbackUrl, callbackData) in batch)
+            {
+                var (success, statusText) = await SendCallback(callbackUrl, callbackData);
+
+                if (!success)
+                {
+                    _callbackQueue.Enqueue((callbackUrl, callbackData));
+                }
+            }
+
+            await Task.Delay(1000);
+        }
+    }
 
     private async Task LogCallToOpenSearch(string phone, string status, string callId, string code, string? errorMessage)
-    {
+     {
         var log = new CallLog
         {
             CallId = callId,
@@ -157,53 +197,65 @@ public class CallService
         }
     }
 
-    private async Task SendCallback(string callbackUrl, string? phone, string? status, string? callId, string? code, string? errorMessage)
+    private async Task<(bool Success, string? StatusText)> SendCallback(string callbackUrl, object callbackData)
     {
-        if (string.IsNullOrEmpty(callbackUrl)) return;
-
-        var callbackData = new
-        {
-            phone,
-            callId,
-            status,
-            code,
-            errorMessage
-        };
-
         var jsonContent = new StringContent(JsonConvert.SerializeObject(callbackData), Encoding.UTF8, "application/json");
+
         try
         {
             var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
             response.EnsureSuccessStatusCode();
+            return (true, null);
         }
-        catch
+        catch (Exception ex)
         {
-            _isServiceAvailable = false;
+            if (_callbackQueue.Count >= _maxQueueSize)
+            {
+                return (false, "Callback queue limit reached");
+            }
+            _callbackQueue.Enqueue((callbackUrl, callbackData));
+            return (false, $"Callback failed and added to queue: {ex.Message}");
         }
     }
 
-    private async Task HandleCallbackAndLogging(string callbackUrl, CallRequest request, CallResponse response)
+    private async Task<(bool Success, string? StatusText)> HandleCallbackAndLogging(string? callbackUrl, CallRequest request, CallResponse response)
     {
         if (!string.IsNullOrEmpty(callbackUrl))
         {
-            await SendCallback(request.Phone, request.Phone ?? null, response.Status ?? null, response.CallId ?? null, response.Code ?? null, response.StatusText ?? null);
-        }
-        await LogCallToOpenSearch(request.Phone, response.Status, response.CallId, response.Code, response.StatusText);
-    }
-
-    private string NormalizePhoneNumber(string phoneNumber)
-    {
-        var digitsOnly = new StringBuilder();
-
-        foreach (char c in phoneNumber)
-        {
-            if (char.IsDigit(c))
+            var callbackData = new
             {
-                digitsOnly.Append(c);
+                phone = request.Phone,
+                callId = response.CallId,
+                status = response.Status,
+                code = response.Code,
+                errorMessage = response.StatusText
+            };
+
+            var (callbackSuccess, statusText) = await SendCallback(callbackUrl, callbackData);
+            if (!callbackSuccess)
+            {
+                return (false, statusText);
             }
         }
 
-        return digitsOnly.ToString();
+        await LogCallToOpenSearch(request.Phone, response.Status, response.CallId, response.Code, response.StatusText);
+        return (true, null);
+    }
+
+    public static string GenerateCallId()
+    {
+        DateTime now = DateTime.UtcNow;
+        // Получаем таймстамп в миллисекундах 
+
+        long timestamp = (long)(now - new DateTime(1970, 1, 1)).TotalMilliseconds;
+
+        // Получаем миллисекунды текущего времени
+        int milliseconds = now.Millisecond;
+
+        // Форматируем идентификатор с учетом 5 знаков миллисекунд
+        string callId = $"{timestamp:D13}{milliseconds:D3}";
+
+        return callId;
     }
 
     private string CleanPhoneNumber(string phoneNumber)

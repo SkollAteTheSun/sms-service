@@ -36,11 +36,6 @@ public class CallController : ControllerBase
                 {
                     return BadRequest(response);
                 }
-                if (response.StatusText.Contains("Queue limit reached"))
-                {
-                    return StatusCode(503, response); 
-                }
-
                 return StatusCode(500, response);
 
             case "queued":
@@ -58,6 +53,12 @@ public class CallController : ControllerBase
     [HttpGet("queue-status")]
     public IActionResult GetQueueStatus()
     {
-        return Ok(new { queued = _callService.GetQueueStatus() });
+        return Ok(new { queued = _callService.GetCallQueueStatus() });
+    }
+
+    [HttpGet("queue-callback-status")]
+    public IActionResult GetCallbackQueueStatus()
+    {
+        return Ok(new { queued = _callService.GetCallbackQueueStatus() });
     }
 }
