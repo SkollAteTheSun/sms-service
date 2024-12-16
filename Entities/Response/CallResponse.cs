@@ -7,18 +7,18 @@ public class CallResponse
     [JsonProperty("status")]
     public string Status { get; set; }
 
-    [JsonProperty("code", NullValueHandling = NullValueHandling.Ignore)]
+    [JsonProperty("code")]
     public string? Code { get; set; }
 
-    [JsonProperty("call_id", NullValueHandling = NullValueHandling.Ignore)]
+    [JsonProperty("call_id")]
     public string? CallId { get; set; }
 
-    [JsonProperty("cost", NullValueHandling = NullValueHandling.Ignore)]
+    [JsonProperty("cost")]
     public double? Cost { get; set; }
 
-    [JsonProperty("balance", NullValueHandling = NullValueHandling.Ignore)]
+    [JsonProperty("balance")]
     public double? Balance { get; set; }
 
-    [JsonProperty("status_text", NullValueHandling = NullValueHandling.Ignore)]
+    [JsonProperty("status_text")]
     public string? StatusText { get; set; }
 }

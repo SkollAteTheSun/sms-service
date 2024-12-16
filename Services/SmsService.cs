@@ -16,6 +16,9 @@ public class SmsService
     private readonly ConcurrentQueue<SmsRequest> _smsQueue;
     private readonly ConcurrentQueue<SmsCallbackRequest> _smsCallbackQueue;
     private readonly int _maxQueueSize;
+    private readonly int _smsBatchSize;
+    private readonly int _smsQueueIntervalMs;
+    private readonly int _smsBatchIntervalMs;
     private readonly HttpClient _httpClient;
     private System.Timers.Timer _queueTimer;
     private IConfiguration _configuration;
@@ -26,13 +29,19 @@ public class SmsService
     {
         _configuration = configuration;
         _smsProviderFactory = smsProviderFactory;
-        _activeProvider = configuration["ActiveSmsProvider"] ?? "smsru";
-        _maxQueueSize = _configuration.GetValue<int>("QueueSettings:SmsMaxSize");
+        _activeProvider = configuration["ActiveSmsProvider"] ?? "smsru"; 
+        _maxQueueSize = _configuration.GetValue<int?>("QueueSettings:SmsMaxSize") ?? throw new ArgumentNullException("QueueSettings:SmsMaxSize");
+        _smsBatchSize = _configuration.GetValue<int?>("QueueSettings:SmsBatchSize") ?? throw new ArgumentNullException("QueueSettings:SmsBatchSize");
+        _smsQueueIntervalMs = _configuration.GetValue<int?>("QueueSettings:SmsQueueIntervalMs") ?? throw new ArgumentNullException("QueueSettings:SmsQueueIntervalMs");
+        _smsBatchIntervalMs = _configuration.GetValue<int?>("QueueSettings:SmsBatchIntervalMs") ?? throw new ArgumentNullException("QueueSettings:SmsBatchIntervalMs");
+
         _smsQueue = new ConcurrentQueue<SmsRequest>();
+        _smsCallbackQueue = new ConcurrentQueue<SmsCallbackRequest>();
+
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
 
-        _queueTimer = new System.Timers.Timer(60000);
+        _queueTimer = new System.Timers.Timer(_smsQueueIntervalMs);
         _queueTimer.Elapsed += (sender, e) => SendFromQueue(); // смс
         _queueTimer.Elapsed += (sender, e) => SendFromCallbackQueue(); // callback-и
         _queueTimer.Start();
@@ -135,7 +144,7 @@ public class SmsService
         {
             var batch = new List<SmsRequest>();
 
-            for (int i = 0; i < 10 && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
+            for (int i = 0; i < _smsBatchSize && _smsQueue.TryDequeue(out SmsRequest smsRequest); i++)
             {
                 batch.Add(smsRequest);
             }
@@ -154,7 +163,7 @@ public class SmsService
                 await LogSmsToOpenSearch(dateTime, smsRequest.Phone, smsRequest.Message, status, _activeProvider, smsRequest.MessId, response.StatusText);
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(_smsBatchIntervalMs);
         }
     }
 
@@ -167,7 +176,7 @@ public class SmsService
         {
             var batch = new List<SmsCallbackRequest>();
 
-            for (int i = 0; i < 10 && _smsCallbackQueue.TryDequeue(out SmsCallbackRequest callbackRequest); i++)
+            for (int i = 0; i < _smsBatchSize && _smsCallbackQueue.TryDequeue(out SmsCallbackRequest callbackRequest); i++)
             {
                 batch.Add(callbackRequest);
             }
@@ -181,7 +190,7 @@ public class SmsService
                 }
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(_smsBatchIntervalMs);
         }
     }
 

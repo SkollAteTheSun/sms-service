@@ -14,6 +14,9 @@ public class CallService
     private readonly ConcurrentQueue<CallRequest> _callQueue;
     private readonly ConcurrentQueue<(string CallbackUrl, object CallbackData)> _callbackQueue;
     private readonly int _maxQueueSize;
+    private readonly int _callBatchSize;
+    private readonly int _callQueueIntervalMs;
+    private readonly int _callBatchIntervalMs;
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private readonly IConfiguration _configuration;
@@ -25,11 +28,15 @@ public class CallService
         _callQueue = new ConcurrentQueue<CallRequest>();
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
-        _maxQueueSize = _configuration.GetValue<int>("QueueSettings:CallMaxSize");
+        _maxQueueSize = _configuration.GetValue<int?>("QueueSettings:CallMaxSize") ?? throw new ArgumentNullException("QueueSettings:CallMaxSize");
+        _callBatchSize = _configuration.GetValue<int?>("QueueSettings:CallBatchSize") ?? throw new ArgumentNullException("QueueSettings:CallBatchSize");
+        _callQueueIntervalMs = _configuration.GetValue<int?>("QueueSettings:CallQueueIntervalMs") ?? throw new ArgumentNullException("QueueSettings:CallQueueIntervalMs");
+        _callBatchIntervalMs = _configuration.GetValue<int?>("QueueSettings:CallBatchIntervalMs") ?? throw new ArgumentNullException("QueueSettings:CallBatchIntervalMs");
+
         _callQueue = new ConcurrentQueue<CallRequest>();
         _callbackQueue = new ConcurrentQueue<(string CallbackUrl, object CallbackData)>();
 
-        _queueTimer = new System.Timers.Timer(60000);
+        _queueTimer = new System.Timers.Timer(_callQueueIntervalMs);
         _queueTimer.Elapsed += (sender, e) => ProcessQueue(); // звонки
         _queueTimer.Elapsed += (sender, e) => ProcessCallbackQueue(); // callback-и
         _queueTimer.Start();
@@ -106,7 +113,7 @@ public class CallService
         while (!_callQueue.IsEmpty)
         {
             var batch = new List<CallRequest>();
-            for (int i = 0; i < 10 && _callQueue.TryDequeue(out var request); i++)
+            for (int i = 0; i < _callBatchSize && _callQueue.TryDequeue(out var request); i++)
             {
                 batch.Add(request);
             }
@@ -126,7 +133,7 @@ public class CallService
                 await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", response.CallId, response.Code, response.StatusText);
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(_callBatchIntervalMs);
         }
     }
 
@@ -157,7 +164,7 @@ public class CallService
         while (!_callbackQueue.IsEmpty)
         {
             var batch = new List<(string CallbackUrl, object CallbackData)>();
-            for (int i = 0; i < 10 && _callbackQueue.TryDequeue(out var callbackItem); i++)
+            for (int i = 0; i < _callBatchSize && _callbackQueue.TryDequeue(out var callbackItem); i++)
             {
                 batch.Add(callbackItem);
             }
@@ -172,7 +179,7 @@ public class CallService
                 }
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(_callBatchIntervalMs);
         }
     }
 
