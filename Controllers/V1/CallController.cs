@@ -2,7 +2,6 @@
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Services;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 
@@ -25,6 +24,11 @@ public class CallController : ControllerBase
     {
         var response = await _callService.InitiateCallAsync(request);
 
+        if (string.IsNullOrEmpty(response.StatusText))
+        {
+            response.StatusText = "Unexpected error occurred";
+        }
+
         switch (response.Status)
         {
             case "OK":
@@ -36,11 +40,6 @@ public class CallController : ControllerBase
                 {
                     return BadRequest(response);
                 }
-                if (response.StatusText.Contains("Queue limit reached"))
-                {
-                    return StatusCode(503, response); 
-                }
-
                 return StatusCode(500, response);
 
             case "queued":
@@ -50,7 +49,7 @@ public class CallController : ControllerBase
                 return StatusCode(500, new CallResponse
                 {
                     Status = "failure",
-                    StatusText = "Unexpected error occurred"
+                    StatusText = response.StatusText,
                 });
         }
     }
@@ -58,6 +57,12 @@ public class CallController : ControllerBase
     [HttpGet("queue-status")]
     public IActionResult GetQueueStatus()
     {
-        return Ok(new { queued = _callService.GetQueueStatus() });
+        return Ok(new { queued = _callService.GetCallQueueStatus() });
+    }
+
+    [HttpGet("queue-callback-status")]
+    public IActionResult GetCallbackQueueStatus()
+    {
+        return Ok(new { queued = _callService.GetCallbackQueueStatus() });
     }
 }

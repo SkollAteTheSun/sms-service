@@ -4,14 +4,17 @@ using Asp.Versioning.ApiExplorer;
 using Kp.Ms.Sms.Config;
 using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
-using Kp.Ms.Sms.Interfaces;
 using Kp.Ms.Sms.Services;
+using Kp.Ms.Sms.Middlewares;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services
     .AddControllers()
-    .AddJsonOptions(options => { options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
+    .AddJsonOptions(options => { 
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 builder.Services
     .AddApiVersioning(options =>
@@ -27,8 +30,35 @@ builder.Services
         options.SubstituteApiVersionInUrl = true;
     });
 
+builder.Services.AddSwaggerGen(option =>
+{
+    option.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        In = ParameterLocation.Header,
+        Description = "Please enter a valid token",
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        BearerFormat = "JWT",
+        Scheme = "Bearer"
+    });
+    option.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] { }
+        }
+    });
+    option.EnableAnnotations();
+});
+
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(option => { option.EnableAnnotations(); });
 builder.Services.ConfigureOptions<ConfigureSwaggerOptions>();
 
 builder.Services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
@@ -75,6 +105,8 @@ if (!app.Environment.IsProduction())
 }
 
 app.UseCors("cors");
+
+app.UseMiddleware<AuthorizationMiddleware>();
 
 app.UseAuthorization();
 

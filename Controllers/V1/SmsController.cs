@@ -1,10 +1,8 @@
 using Asp.Versioning;
-using Kp.Ms.Sms.Factories;
 using Kp.Ms.Sms.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Kp.Ms.Sms.Entities.Request;
-using OpenSearch.Client;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
@@ -52,5 +50,11 @@ public class SmsController : ControllerBase
     public IActionResult GetQueueStatus()
     {
         return Ok(new { queued = _smsService.GetQueueStatus() });
+    }
+
+    [HttpGet("queue-callback-status")]
+    public IActionResult GetCallbackQueueStatus()
+    {
+        return Ok(new { queued = _smsService.GetCallbackQueueStatus() });
     }
 }
