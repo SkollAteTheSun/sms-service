@@ -21,6 +21,7 @@ public class CallService
     private readonly OpenSearchClient _openSearchClient;
     private readonly IConfiguration _configuration;
     private readonly System.Timers.Timer _queueTimer;
+    private bool _isProcessingQueue = false;
 
     public CallService(IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient)
     {
@@ -110,29 +111,30 @@ public class CallService
 
     private async void ProcessQueue()
     {
-        while (!_callQueue.IsEmpty)
+        var batch = new List<CallRequest>();
+        for (int i = 0; i < _callBatchSize && _callQueue.TryDequeue(out var request); i++)
         {
-            var batch = new List<CallRequest>();
-            for (int i = 0; i < _callBatchSize && _callQueue.TryDequeue(out var request); i++)
+            batch.Add(request);
+        }
+
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var request in batch)
+        {
+            var response = await CallApiAsync(request.Phone, request.UserIp);
+            var (callbackSuccess, statusText) = await SendCallback(request.CallbackUrl, new
             {
-                batch.Add(request);
-            }
+                phone = request.Phone,
+                callId = response.CallId,
+                status = response.Status,
+                code = response.Code,
+                errorMessage = response.StatusText
+            });
 
-            foreach (var request in batch)
-            {
-                var response = await CallApiAsync(request.Phone, request.UserIp);
-                var(callbackSuccess, statusText) = await SendCallback(request.CallbackUrl, new
-                {
-                    phone = request.Phone,
-                    callId = response.CallId,
-                    status = response.Status,
-                    code = response.Code,
-                    errorMessage = response.StatusText
-                });
-
-                await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", response.CallId, response.Code, response.StatusText);
-            }
-
+            await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", response.CallId, response.Code, response.StatusText);
             await Task.Delay(_callBatchIntervalMs);
         }
     }
@@ -161,30 +163,26 @@ public class CallService
 
     private async Task ProcessCallbackQueue()
     {
-        while (!_callbackQueue.IsEmpty)
+        var batch = new List<(string CallbackUrl, object CallbackData)>();
+        for (int i = 0; i < _callBatchSize && _callbackQueue.TryDequeue(out var callbackItem); i++)
         {
-            var batch = new List<(string CallbackUrl, object CallbackData)>();
-            for (int i = 0; i < _callBatchSize && _callbackQueue.TryDequeue(out var callbackItem); i++)
-            {
-                batch.Add(callbackItem);
-            }
+            batch.Add(callbackItem);
+        }
 
-            foreach (var (callbackUrl, callbackData) in batch)
-            {
-                var (success, statusText) = await SendCallback(callbackUrl, callbackData);
+        if (batch.Count == 0)
+        {
+            return;
+        }
 
-                if (!success)
-                {
-                    _callbackQueue.Enqueue((callbackUrl, callbackData));
-                }
-            }
-
+        foreach (var (callbackUrl, callbackData) in batch)
+        {
+            var (success, statusText) = await SendCallback(callbackUrl, callbackData);
             await Task.Delay(_callBatchIntervalMs);
         }
     }
 
     private async Task LogCallToOpenSearch(string phone, string status, string callId, string code, string? errorMessage)
-     {
+    {
         var log = new CallLog
         {
             CallId = callId,
@@ -226,6 +224,9 @@ public class CallService
 
     private async Task<(bool Success, string? StatusText)> HandleCallbackAndLogging(string? callbackUrl, CallRequest request, CallResponse response)
     {
+        bool callbackSuccess = true;
+        string statusText = null;
+
         if (!string.IsNullOrEmpty(callbackUrl))
         {
             var callbackData = new
@@ -237,14 +238,13 @@ public class CallService
                 errorMessage = response.StatusText
             };
 
-            var (callbackSuccess, statusText) = await SendCallback(callbackUrl, callbackData);
-            if (!callbackSuccess)
-            {
-                return (false, statusText);
-            }
+            (callbackSuccess, statusText) = await SendCallback(callbackUrl, callbackData);
         }
 
         await LogCallToOpenSearch(request.Phone, response.Status, response.CallId, response.Code, response.StatusText);
+
+        if (!callbackSuccess) return (false, statusText);
+
         return (true, null);
     }
 
@@ -264,7 +264,7 @@ public class CallService
 
     private bool ValidPhoneNumber(string phoneNumber) => phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8"));
 
-    private bool ValidIpAddress(string ipAddress) => !string.IsNullOrEmpty(ipAddress); 
+    private bool ValidIpAddress(string ipAddress) => !string.IsNullOrEmpty(ipAddress);
 
     private bool ValidUrl(string? url)
     {
