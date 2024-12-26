@@ -3,16 +3,16 @@ using Kp.Ms.Sms.Services;
 
 namespace Kp.Ms.Sms.Factories;
 
-public class SmsProviderFactory
+public class ProviderFactory
 {
     private readonly IServiceProvider _serviceProvider;
 
-    public SmsProviderFactory(IServiceProvider serviceProvider)
+    public ProviderFactory(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
     }
 
-    public ISmsProvider GetProvider(string methodCode)
+    public IProvider GetProvider(string methodCode)
     {
         return methodCode.ToLower() switch
         {

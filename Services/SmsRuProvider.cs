@@ -6,7 +6,7 @@ using Kp.Ms.Sms.Interfaces;
 
 namespace Kp.Ms.Sms.Services;
 
-public class SmsRuProvider : ISmsProvider
+public class SmsRuProvider : IProvider
 {
     private readonly IConfiguration _configuration;
     private readonly HttpClient _client;
@@ -38,5 +38,15 @@ public class SmsRuProvider : ISmsProvider
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<SmsResponse>(jsonString) ?? throw new Exception("No sms ru response");
+    }
+
+    public async Task<CallResponse> CallApiAsync(string phone, string userIp)
+    {
+        var apiId = _configuration["SmsRu:ApiId"];
+        var url = $"{_configuration["SmsRu:Url"]}/code/call?phone={phone}&ip={userIp}&api_id={apiId}";
+
+        var response = await _client.GetAsync(url);
+        var data = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<CallResponse>(data);
     }
 }

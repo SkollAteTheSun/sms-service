@@ -24,11 +24,6 @@ public class CallController : ControllerBase
     {
         var response = await _callService.InitiateCallAsync(request);
 
-        if (string.IsNullOrEmpty(response.StatusText))
-        {
-            response.StatusText = "Unexpected error occurred";
-        }
-
         switch (response.Status)
         {
             case "OK":
@@ -52,6 +47,21 @@ public class CallController : ControllerBase
                     StatusText = response.StatusText,
                 });
         }
+    }
+
+    [HttpPost("switch")]
+    public IActionResult Switch([FromBody] SmsSwitchRequest request)
+    {
+        if (_callService.SwitchProvider(request.MethodCode))
+            return Ok(new { status = "success" });
+
+        return BadRequest(new { status = "failure", reason = "Invalid provider code" });
+    }
+
+    [HttpGet("active-provider")]
+    public IActionResult GetActiveProvider()
+    {
+        return Ok(new { activeProvider = _callService.GetActiveProvider() });
     }
 
     [HttpGet("queue-status")]

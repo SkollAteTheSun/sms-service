@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 
 namespace Kp.Ms.Sms.Services;
 
-public class SmsRu2Provider : ISmsProvider
+public class SmsRu2Provider : IProvider
 {
     private readonly IConfiguration _configuration;
     private readonly HttpClient _client;
@@ -36,5 +36,15 @@ public class SmsRu2Provider : ISmsProvider
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<SmsResponse>(jsonString) ?? throw new Exception("No sms ru2 response");
+    }
+
+    public async Task<CallResponse> CallApiAsync(string phone, string userIp)
+    {
+        var apiId = _configuration["SmsRu2:ApiId"];
+        var url = $"{_configuration["SmsRu2:Url"]}/code/call?phone={phone}&ip={userIp}&api_id={apiId}";
+
+        var response = await _client.GetAsync(url);
+        var data = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<CallResponse>(data);
     }
 }
