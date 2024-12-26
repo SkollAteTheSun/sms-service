@@ -76,7 +76,6 @@ public class SmsService
 
         if (!string.IsNullOrEmpty(request.CallbackUrl) && !ValidUrl(request.CallbackUrl)) return "Error: Invalid callback URL";
 
-
         var response = await provider.SendSmsAsync(request.Phone, request.Message);
 
         // Отправка смс прошла успешна
@@ -144,18 +143,37 @@ public class SmsService
         foreach (var request in batch)
         {
             var response = await provider.SendSmsAsync(request.Phone, request.Message);
-            var status = response.Status == "OK" ? "success" : "failure";
 
-            await EnqueueCallback(request.CallbackUrl, new
+            //var status = response.Status == "OK" ? "success" : "failure";
+            if (response.Status == "OK")
             {
-                phone = request.Phone,
-                message = request.Message,
-                messId = request.MessId,
-                status = response.Status,
-                errorMessage = response.StatusText
-            });
 
-            await LogSmsToOpenSearch(request.Phone, request.Message, status, _activeProvider, request.MessId, response.StatusText);
+                await EnqueueCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    message = request.Message,
+                    messId = request.MessId,
+                    status = response.Status,
+                    errorMessage = response.StatusText
+                });
+
+                await LogSmsToOpenSearch(request.Phone, request.Message, response.Status, _activeProvider, request.MessId, "Successful sending of call from queue");
+            }
+            else
+            {
+                if (response.StatusCode == 500 || response.StatusCode == 220)
+                {
+                    if (!EnqueueSms(request))
+                    {
+                        await LogSmsToOpenSearch(request.Phone, request.Message, response.Status, _activeProvider, request.MessId, "500: Queue limit reached");
+                    }
+                }
+                else
+                {
+                    await LogSmsToOpenSearch(request.Phone, request.Message, "failure", _activeProvider, request.MessId, response.StatusText);
+                }
+            }
+
             await Task.Delay(_smsBatchIntervalMs);
         }
     }
@@ -248,45 +266,6 @@ public class SmsService
             return (false, $"Callback failed and added to queue: {ex.Message}");
         }
     }
-
-
-
-    /*
-    private async Task<(bool Success, string? StatusText)> SendCallback(string callbackUrl, string phone, string status, string messId, string reason = null, int attempt)
-    {
-        if (string.IsNullOrEmpty(callbackUrl))
-        {
-            return (false, "Callback URL is null or empty");
-        }
-
-        var callbackData = new SmsCallbackRequest
-        {
-            CallbackUrl = callbackUrl,
-            Phone = phone,
-            Status = status,
-            MessId = messId,
-            Reason = reason
-        };
-
-        var jsonContent = new StringContent(JsonConvert.SerializeObject(callbackData), Encoding.UTF8, "application/json");
-
-        try
-        {
-            var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
-            response.EnsureSuccessStatusCode();
-            return (true, "Callback successfully sent");
-        }
-        catch (Exception ex)
-        {
-            if (_smsCallbackQueue.Count >= _maxQueueSize)
-            {
-                return (false, "Callback queue limit reached");
-            }
-            _smsCallbackQueue.Enqueue(callbackData);
-            return (false, $"Callback failed and added to queue: {ex.Message}");
-        }
-    }
-    */
 
     private async Task LogSmsToOpenSearch(string? phone, string? textMessage, string status, string providerCode, string? messId, string? errorMessage)
     {

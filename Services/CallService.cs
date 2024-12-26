@@ -108,7 +108,7 @@ public class CallService
 
         // 220 Сервис временно недоступен, попробуйте чуть позже
         // 500 Ошибка на сервере. Повторите запрос
-        if (response.Code == "220" || response.Code == "500")
+        if (response.StatusCode == 220 || response.StatusCode == 500)
         {
             // Если очередь переплнена, возвращаем ошибку
             if (!EnqueueCall(request))
@@ -167,16 +167,34 @@ public class CallService
         foreach (var request in batch)
         {
             var response = await provider.CallApiAsync(request.Phone, request.UserIp);
-            var (callbackSuccess, statusText) = await SendCallback(request.CallbackUrl, new
-            {
-                phone = request.Phone,
-                callId = response.CallId,
-                status = response.Status,
-                code = response.Code,
-                errorMessage = response.StatusText
-            }, 1);
 
-            await LogCallToOpenSearch(request.Phone, response.Status == "OK" ? "success" : "failure", response.CallId, response.Code, response.StatusText, _activeProvider);
+            if (response.Status == "OK")
+            {
+                await EnqueueCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    callId = response.CallId,
+                    status = response.Status,
+                    code = response.Code,
+                    errorMessage = "Successful sending of call from queue"
+                });
+
+                await LogCallToOpenSearch(request.Phone, "success", response.CallId, response.Code, "Successful sending of call from queue", _activeProvider);
+            }
+            else
+            {
+                if (response.StatusCode == 500 || response.StatusCode == 220)
+                {
+                    if (!EnqueueCall(request))
+                    {
+                        await LogCallToOpenSearch(request.Phone, "failure", response.CallId, response.Code, "500: Queue limit reached", _activeProvider);
+                    }
+                }
+                else
+                {
+                    await LogCallToOpenSearch(request.Phone, "failure", response.CallId, response.Code, response.StatusText, _activeProvider);
+                }
+            }
             await Task.Delay(_callBatchIntervalMs);
         }
     }
