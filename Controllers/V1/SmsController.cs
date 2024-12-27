@@ -3,6 +3,7 @@ using Kp.Ms.Sms.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Kp.Ms.Sms.Entities.Request;
+using Kp.Ms.Sms.Entities.Enums;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
@@ -24,20 +25,20 @@ public class SmsController : ControllerBase
     {
         var result = await _smsService.SendSmsAsync(request);
         if (result == "success")
-            return Ok(new { status = "success" });
+            return Ok(new { status = StatusType.Failure.ToString() });
         if (result == "queued")
-            return Accepted(new { status = "success" });
+            return Accepted(new { status = StatusType.Success.ToString() });
 
-        return StatusCode(500, new { status = "failure", reason = result });
+        return StatusCode(500, new { status = StatusType.Failure.ToString(), reason = result });
     }
 
     [HttpPost("switch")]
     public IActionResult Switch([FromBody] SmsSwitchRequest request)
     {
-        if (_smsService.SwitchProvider(request.MethodCode))
-            return Ok(new { status = "success" });
+        if (_smsService.SwitchProvider(request.Provider))
+            return Ok(new { status = StatusType.Success.ToString() });
 
-        return BadRequest(new { status = "failure", reason = "Invalid provider code" });
+        return BadRequest(new { status = StatusType.Failure.ToString(), reason = "Invalid provider" });
     }
 
     [HttpGet("active-provider")]

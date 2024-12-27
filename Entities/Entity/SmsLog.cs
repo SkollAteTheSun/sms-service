@@ -5,13 +5,13 @@ namespace Kp.Ms.Sms.Entities.Entity;
 public class SmsLog
 {
     [JsonProperty("mess_id")]
-    public string MessId { get; set; }
+    public string? MessId { get; set; }
 
     [JsonProperty("phone")]
-    public string Phone { get; set; }
+    public string? Phone { get; set; }
 
     [JsonProperty("text_message")]
-    public string TextMessage { get; set; }
+    public string? TextMessage { get; set; }
 
     [JsonProperty("date")]
     public DateTime Date { get; set; }

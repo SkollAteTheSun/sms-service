@@ -1,4 +1,5 @@
 ﻿using Asp.Versioning;
+using Kp.Ms.Sms.Entities.Enums;
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Services;
@@ -43,7 +44,7 @@ public class CallController : ControllerBase
             default:
                 return StatusCode(500, new CallResponse
                 {
-                    Status = "failure",
+                    Status = StatusType.Failure.ToString(),
                     StatusText = response.StatusText,
                 });
         }
@@ -52,10 +53,10 @@ public class CallController : ControllerBase
     [HttpPost("switch")]
     public IActionResult Switch([FromBody] SmsSwitchRequest request)
     {
-        if (_callService.SwitchProvider(request.MethodCode))
-            return Ok(new { status = "success" });
+        if (_callService.SwitchProvider(request.Provider))
+            return Ok(new { status = StatusType.Success.ToString() });
 
-        return BadRequest(new { status = "failure", reason = "Invalid provider code" });
+        return BadRequest(new { status = StatusType.Failure.ToString(), reason = "Invalid provider code" });
     }
 
     [HttpGet("active-provider")]

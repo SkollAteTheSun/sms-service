@@ -7,6 +7,7 @@ using Kp.Ms.Sms.Factories;
 using Kp.Ms.Sms.Services;
 using Kp.Ms.Sms.Middlewares;
 using Microsoft.OpenApi.Models;
+using Kp.Ms.Sms.Entities.Entity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,6 +63,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureOptions<ConfigureSwaggerOptions>();
 
 builder.Services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
+builder.Services.Configure<QueueSettings>(builder.Configuration.GetSection("QueueSettings"));
 
 builder.Services.AddCors(c => c.AddPolicy("cors", opt =>
 {

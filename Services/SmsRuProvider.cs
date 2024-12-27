@@ -1,28 +1,32 @@
-using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
-using OpenSearch.Client;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Interfaces;
 
 namespace Kp.Ms.Sms.Services;
 
-public class SmsRuProvider : IProvider
+public abstract class SmsProviderBase : IProvider
 {
-    private readonly IConfiguration _configuration;
-    private readonly HttpClient _client;
+    protected readonly IConfiguration _configuration;
+    protected readonly HttpClient _client;
+    protected readonly string _apiIdKey;
+    protected readonly string _fromKey;
+    protected readonly string _urlKey;
 
-    public SmsRuProvider(IConfiguration configuration, HttpClient client)
+    protected SmsProviderBase(IConfiguration configuration, HttpClient client, string apiIdKey, string fromKey, string urlKey)
     {
         _configuration = configuration;
         _client = client;
+        _apiIdKey = apiIdKey;
+        _fromKey = fromKey;
+        _urlKey = urlKey;
     }
 
     public async Task<SmsResponse> SendSmsAsync(string phone, string message)
     {
         var parameters = new Dictionary<string, string>
             {
-                { "from", _configuration["SmsRu:From"] ?? throw new InvalidOperationException("SmsRu from not set") },
-                { "api_id", _configuration["SmsRu:ApiId"] ?? throw new InvalidOperationException("SmsRu api id not set") },
+                { "from", _configuration[_fromKey] ?? throw new InvalidOperationException($"{_fromKey} not set") },
+                { "api_id", _configuration[_apiIdKey] ?? throw new InvalidOperationException($"{_apiIdKey} not set") },
                 { "json", "1" },
                 { "to", phone },
                 { "msg", message }
@@ -37,16 +41,30 @@ public class SmsRuProvider : IProvider
         var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();
-        return JsonConvert.DeserializeObject<SmsResponse>(jsonString) ?? throw new Exception("No sms ru response");
+        return JsonConvert.DeserializeObject<SmsResponse>(jsonString) ?? throw new Exception("No sms response");
     }
 
     public async Task<CallResponse> CallApiAsync(string phone, string userIp)
     {
-        var apiId = _configuration["SmsRu:ApiId"];
-        var url = $"{_configuration["SmsRu:Url"]}/code/call?phone={phone}&ip={userIp}&api_id={apiId}";
+        var apiId = _configuration[_apiIdKey];
+        var url = $"{_configuration[_urlKey]}/code/call?phone={phone}&ip={userIp}&api_id={apiId}";
 
         var response = await _client.GetAsync(url);
         var data = await response.Content.ReadAsStringAsync();
         return JsonConvert.DeserializeObject<CallResponse>(data);
     }
+}
+
+public class SmsRuProvider : SmsProviderBase
+{
+    public SmsRuProvider(IConfiguration configuration, HttpClient client)
+        : base(configuration, client, "SmsRu:ApiId", "SmsRu:From", "SmsRu:Url")
+    { }
+}
+
+public class SmsRu2Provider : SmsProviderBase
+{
+    public SmsRu2Provider(IConfiguration configuration, HttpClient client)
+        : base(configuration, client, "SmsRu2:ApiId", "SmsRu2:From", "SmsRu2:Url")
+    { }
 }

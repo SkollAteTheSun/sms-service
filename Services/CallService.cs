@@ -7,22 +7,16 @@ using System.Collections.Concurrent;
 using System.Text;
 using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
+using Microsoft.Extensions.Options;
+using Kp.Ms.Sms.Entities.Enums;
 
 namespace Kp.Ms.Sms.Services;
 
 public class CallService
 {
     private readonly ConcurrentQueue<CallRequest> _callQueue;
-    private readonly ConcurrentQueue<(string CallbackUrl, object CallbackData, int Attempt)> _callbackQueue;
-    private readonly int _maxQueueSize;
-    private readonly int _callBatchSize;
-    private readonly int _callQueueIntervalMs;
-    private readonly int _callBatchIntervalMs;
-    private readonly int _maxCallbackQueueSize;
-    private readonly int _callbackBatchSize;
-    private readonly int _callbackQueueIntervalMs;
-    private readonly int _callbackBatchIntervalMs;
-    private readonly int _maxCallbackAttempts;
+    private readonly ConcurrentQueue<CallbackItem> _callbackQueue;
+    private readonly QueueSettings _queueSettings;
     private readonly System.Timers.Timer _queueTimer;
     private readonly System.Timers.Timer _queueCallbackTimer;
 
@@ -31,36 +25,24 @@ public class CallService
     private readonly IConfiguration _configuration;
 
     private readonly ProviderFactory _providerFactory;
-    private static string _activeProvider;
+    private SmsProvider _activeProvider;
 
-    public CallService(ProviderFactory providerFactory, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient)
+    public CallService(ProviderFactory providerFactory, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
     {
         _configuration = configuration;
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
         _providerFactory = providerFactory;
-        _activeProvider = configuration["ActiveSmsProvider"] ?? "smsru";
-
-        _maxQueueSize = _configuration.GetValue<int?>("QueueSettings:CallMaxSize") ?? throw new ArgumentNullException("QueueSettings:CallMaxSize");
-        _callBatchSize = _configuration.GetValue<int?>("QueueSettings:CallBatchSize") ?? throw new ArgumentNullException("QueueSettings:CallBatchSize");
-        _callQueueIntervalMs = _configuration.GetValue<int?>("QueueSettings:CallQueueIntervalMs") ?? throw new ArgumentNullException("QueueSettings:CallQueueIntervalMs");
-        _callBatchIntervalMs = _configuration.GetValue<int?>("QueueSettings:CallBatchIntervalMs") ?? throw new ArgumentNullException("QueueSettings:CallBatchIntervalMs");
-
+        _activeProvider = GetActiveProviderFromConfig(configuration["ActiveSmsProvider"]);
+        _queueSettings = queueSettings.Value; 
         _callQueue = new ConcurrentQueue<CallRequest>();
+        _callbackQueue = new ConcurrentQueue<CallbackItem>();
 
-        _maxCallbackQueueSize = _configuration.GetValue<int?>("QueueSettings:CallCallbackMaxSize") ?? throw new ArgumentNullException("QueueSettings:CallCallbackMaxSize");
-        _callbackBatchSize = _configuration.GetValue<int?>("QueueSettings:CallCallbackBatchSize") ?? throw new ArgumentNullException("QueueSettings:CallCallbackBatchSize");
-        _callbackQueueIntervalMs = _configuration.GetValue<int?>("QueueSettings:CallCallbackQueueIntervalMs") ?? throw new ArgumentNullException("QueueSettings:CallCallbackQueueIntervalMs");
-        _callbackBatchIntervalMs = _configuration.GetValue<int?>("QueueSettings:CallCallbackBatchIntervalMs") ?? throw new ArgumentNullException("QueueSettings:CallCallbackBatchIntervalMs");
-        _maxCallbackAttempts = _configuration.GetValue<int?>("QueueSettings:MaxCallAttempts") ?? throw new ArgumentNullException("QueueSettings:MaxCallAttempts");
-
-        _callbackQueue = new ConcurrentQueue<(string CallbackUrl, object CallbackData, int Attempt)>();
-
-        _queueTimer = new System.Timers.Timer(_callQueueIntervalMs);
+        _queueTimer = new System.Timers.Timer(_queueSettings.CallQueueIntervalMs);
         _queueTimer.Elapsed += (sender, e) => ProcessQueue();
         _queueTimer.Start();
 
-        _queueCallbackTimer = new System.Timers.Timer(_callbackQueueIntervalMs);
+        _queueCallbackTimer = new System.Timers.Timer(_queueSettings.CallCallbackQueueIntervalMs);
         _queueCallbackTimer.Elapsed += (sender, e) => ProcessCallbackQueue();
         _queueCallbackTimer.Start();
     }
@@ -74,7 +56,7 @@ public class CallService
         {
             return new CallResponse
             {
-                Status = "failure",
+                Status = StatusType.Failure.ToString(),
                 StatusText = "Invalid phone number or IP address"
             };
         }
@@ -83,7 +65,7 @@ public class CallService
         {
             return new CallResponse
             {
-                Status = "failure",
+                Status = StatusType.Failure.ToString(),
                 StatusText = "Invalid callback URL"
             };
         }
@@ -97,12 +79,12 @@ public class CallService
             {
                 phone = request.Phone,
                 callId = response.CallId,
-                status = "success",
+                status = StatusType.Success.ToString(),
                 code = response.Code,
                 errorMessage = response.StatusText
             });
 
-            await LogCallToOpenSearch(request.Phone, "success", response.CallId, response.Code, response.StatusText, _activeProvider);
+            await LogCallToOpenSearch(new CallLogRequest(request.Phone, StatusType.Success.ToString(), response.CallId, response.Code, response.StatusText));
             return response;
         }
 
@@ -115,11 +97,11 @@ public class CallService
             {
                 var queueErrorResponse = new CallResponse
                 {
-                    Status = "failure",
+                    Status = StatusType.Failure.ToString(),
                     StatusText = "500: Queue limit reached"
                 };
 
-                await LogCallToOpenSearch(request.Phone, queueErrorResponse.Status, response.CallId, response.Code, queueErrorResponse.StatusText, _activeProvider);
+                await LogCallToOpenSearch(new CallLogRequest(request.Phone, queueErrorResponse.Status, response.CallId, response.Code, queueErrorResponse.StatusText));
 
                 return queueErrorResponse;
             }
@@ -127,7 +109,7 @@ public class CallService
             // Есть место в очереди - добавляем в очередеь
             var queuedResponse = new CallResponse
             {
-                Status = "queued",
+                Status = StatusType.Queued.ToString(),
                 StatusText = "Call has been queued"
             };
 
@@ -140,12 +122,12 @@ public class CallService
                 errorMessage = response.StatusText
             });
 
-            await LogCallToOpenSearch(request.Phone, queuedResponse.Status, response.CallId, response.Code, queuedResponse.StatusText, _activeProvider);
+            await LogCallToOpenSearch(new CallLogRequest(request.Phone, queuedResponse.Status, response.CallId, response.Code, queuedResponse.StatusText));
             return queuedResponse;
         }
 
         // Непредвиденные ошибки
-        await LogCallToOpenSearch(request.Phone, response.Status, response.CallId, response.Code, response.StatusText, _activeProvider);
+        await LogCallToOpenSearch(new CallLogRequest(request.Phone, response.Status, response.CallId, response.Code, response.StatusText));
         return response;
     }
 
@@ -154,7 +136,7 @@ public class CallService
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<CallRequest>();
-        for (int i = 0; i < _callBatchSize && _callQueue.TryDequeue(out var request); i++)
+        for (int i = 0; i < _queueSettings.CallBatchSize && _callQueue.TryDequeue(out var request); i++)
         {
             batch.Add(request);
         }
@@ -168,6 +150,14 @@ public class CallService
         {
             var response = await provider.CallApiAsync(request.Phone, request.UserIp);
 
+            var logRequest = new CallLogRequest(
+               phone: request.Phone, 
+               status: string.Empty, 
+               callId: response.CallId, 
+               code: response.Code,
+               errorMessage: string.Empty
+           );
+
             if (response.Status == "OK")
             {
                 await EnqueueCallback(request.CallbackUrl, new
@@ -179,7 +169,8 @@ public class CallService
                     errorMessage = "Successful sending of call from queue"
                 });
 
-                await LogCallToOpenSearch(request.Phone, "success", response.CallId, response.Code, "Successful sending of call from queue", _activeProvider);
+                logRequest.Status = StatusType.Success.ToString();
+                logRequest.ErrorMessage = "Successful sending of call from queue";
             }
             else
             {
@@ -187,21 +178,25 @@ public class CallService
                 {
                     if (!EnqueueCall(request))
                     {
-                        await LogCallToOpenSearch(request.Phone, "failure", response.CallId, response.Code, "500: Queue limit reached", _activeProvider);
+                        logRequest.Status = StatusType.Failure.ToString();
+                        logRequest.ErrorMessage = "500: Queue limit reached";
                     }
                 }
                 else
                 {
-                    await LogCallToOpenSearch(request.Phone, "failure", response.CallId, response.Code, response.StatusText, _activeProvider);
+                    logRequest.Status = StatusType.Failure.ToString();
+                    logRequest.ErrorMessage = response.StatusText;
                 }
             }
-            await Task.Delay(_callBatchIntervalMs);
+
+            await LogCallToOpenSearch(logRequest);
+            await Task.Delay(_queueSettings.CallBatchIntervalMs);
         }
     }
 
     private bool EnqueueCall(CallRequest request)
     {
-        if (_callQueue.Count >= _maxQueueSize)
+        if (_callQueue.Count >= _queueSettings.CallMaxSize)
         {
             return false;
         }
@@ -211,9 +206,9 @@ public class CallService
 
     private async Task ProcessCallbackQueue()
     {
-        var batch = new List<(string CallbackUrl, object CallbackData, int Attempt)>();
+        var batch = new List<CallbackItem>();
 
-        for (int i = 0; i < _callbackBatchSize && _callbackQueue.TryDequeue(out var callbackItem); i++)
+        for (int i = 0; i < _queueSettings.CallCallbackBatchSize && _callbackQueue.TryDequeue(out var callbackItem); i++)
         {
             batch.Add(callbackItem);
         }
@@ -225,31 +220,29 @@ public class CallService
 
         var tasks = batch.Select(async item =>
         {
-            var (callbackUrl, callbackData, attempt) = item;
-
-            if (attempt >= _maxCallbackAttempts)
+            if (item.Attempt >= _queueSettings.MaxCallAttempts)
             {
 
-                await LogCallToOpenSearch(null, "failure", null, null, $"Callback to url: {callbackUrl} failed after attempts: {attempt}. Removing from queue.", _activeProvider);
+                await LogCallToOpenSearch(new CallLogRequest(null, StatusType.Failure.ToString(), null, null, $"Callback to url: {item.CallbackUrl} failed after attempts: {item.Attempt}. Removing from queue."));
                 return;
             }
 
-            var (success, statusText) = await SendCallback(callbackUrl, callbackData, attempt);
+            var (success, statusText) = await SendCallback(item.CallbackUrl, item.CallbackData, item.Attempt);
 
             if (!success)
             {
                 
-                if (_callbackQueue.Count >= _maxCallbackQueueSize)
+                if (_callbackQueue.Count >= _queueSettings.CallCallbackMaxSize)
                 {
-                    await LogCallToOpenSearch(null, "failure", null, null, $"The callback queue is full! Callback queue size: {_callbackQueue.Count}, callback url: {callbackUrl}", _activeProvider);
+                    await LogCallToOpenSearch(new CallLogRequest(null, StatusType.Failure.ToString(), null, null, $"The callback queue is full! Callback queue size: {_callbackQueue.Count}, callback url: {item.CallbackUrl}"));
                     return;
                 }
             }
             else
             {
-                await LogCallToOpenSearch(null, "success", null, null, $"Sending callback from queue to {callbackUrl} was successful.", _activeProvider);
+                await LogCallToOpenSearch(new CallLogRequest(null, StatusType.Success.ToString(), null, null, $"Sending callback from queue to {item.CallbackUrl} was successful."));
             }
-            await Task.Delay(_callbackBatchIntervalMs);
+            await Task.Delay(_queueSettings.CallCallbackBatchIntervalMs);
         });
 
         await Task.WhenAll(tasks);
@@ -260,12 +253,12 @@ public class CallService
         if (string.IsNullOrEmpty(callbackUrl))
             return;
 
-        if (_callbackQueue.Count >= _maxCallbackQueueSize)
+        if (_callbackQueue.Count >= _queueSettings.CallCallbackMaxSize)
         {
-            await LogCallToOpenSearch(null, "failure", null, null, $"The callback queue is full! Callback queue size: {_callbackQueue.Count}, callback url: {callbackUrl}", _activeProvider);
+            await LogCallToOpenSearch(new CallLogRequest(null, StatusType.Failure.ToString(), null, null, $"The callback queue is full! Callback queue size: {_callbackQueue.Count}, callback url: {callbackUrl}"));
             return;
         }
-        _callbackQueue.Enqueue((callbackUrl, callbackData, 1));
+        _callbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, 1));
     }
 
     private async Task<(bool Success, string? StatusText)> SendCallback(string callbackUrl, object callbackData, int attempt)
@@ -280,27 +273,27 @@ public class CallService
         }
         catch (Exception ex)
         {
-            if (_callbackQueue.Count >= _maxCallbackQueueSize)
+            if (_callbackQueue.Count >= _queueSettings.CallCallbackMaxSize)
             {
                 return (false, "Callback queue limit reached");
             }
-            _callbackQueue.Enqueue((callbackUrl, callbackData, attempt + 1));
+            _callbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, attempt + 1));
 
             return (false, $"Callback failed and added to queue: {ex.Message}");
         }
     }
 
-    private async Task LogCallToOpenSearch(string? phone, string status, string? callId, string? code, string? errorMessage, string provider)
+    private async Task LogCallToOpenSearch(CallLogRequest logRequest)
     {
-        var log = new CallLog
+        CallLog log = new CallLog
         {
-            CallId = callId,
-            Phone = phone,
-            Code = code,
+            Phone = logRequest.Phone,
+            Status = logRequest.Status,
+            CallId = logRequest.CallId,
+            Code = logRequest.Code,
+            ErrorMessage = logRequest.ErrorMessage,
             Date = DateTime.UtcNow,
-            Provider = provider,
-            Status = status,
-            ErrorMessage = errorMessage ?? null,
+            Provider = _activeProvider.ToString(),
         };
 
         var response = await _openSearchClient.IndexAsync(log, idx => idx.Index(_configuration.GetCallStorageName()));
@@ -345,18 +338,26 @@ public class CallService
     public int GetCallQueueStatus() => _callQueue.IsEmpty ? 0 : _callQueue.Count;
     public int GetCallbackQueueStatus() => _callbackQueue.IsEmpty ? 0 : _callbackQueue.Count;
 
-    public bool SwitchProvider(string methodCode)
+    public bool SwitchProvider(SmsProvider provider)
     {
-        var allowedProviders = new[] { "smsru", "smsru2" };
-        if (!allowedProviders.Contains(methodCode.ToLower()))
+        if (!Enum.IsDefined(typeof(SmsProvider), provider))
             return false;
 
-        _activeProvider = methodCode.ToLower();
+        _activeProvider = provider;
         return true;
     }
 
-    public string GetActiveProvider()
+    public SmsProvider GetActiveProvider()
     {
         return _activeProvider;
+    }
+
+    private SmsProvider GetActiveProviderFromConfig(string providerConfig)
+    {
+        if (Enum.TryParse(providerConfig, true, out SmsProvider provider))
+        {
+            return provider;
+        }
+        return SmsProvider.SmsRu;
     }
 }
