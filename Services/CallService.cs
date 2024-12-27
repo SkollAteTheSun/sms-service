@@ -17,13 +17,9 @@ public class CallService
     private readonly ConcurrentQueue<CallRequest> _callQueue;
     private readonly ConcurrentQueue<CallbackItem> _callbackQueue;
     private readonly QueueSettings _queueSettings;
-    private readonly System.Timers.Timer _queueTimer;
-    private readonly System.Timers.Timer _queueCallbackTimer;
-
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private readonly IConfiguration _configuration;
-
     private readonly ProviderFactory _providerFactory;
     private SmsProvider _activeProvider;
 
@@ -37,14 +33,6 @@ public class CallService
         _queueSettings = queueSettings.Value; 
         _callQueue = new ConcurrentQueue<CallRequest>();
         _callbackQueue = new ConcurrentQueue<CallbackItem>();
-
-        _queueTimer = new System.Timers.Timer(_queueSettings.CallQueueIntervalMs);
-        _queueTimer.Elapsed += (sender, e) => ProcessQueue();
-        _queueTimer.Start();
-
-        _queueCallbackTimer = new System.Timers.Timer(_queueSettings.CallCallbackQueueIntervalMs);
-        _queueCallbackTimer.Elapsed += (sender, e) => ProcessCallbackQueue();
-        _queueCallbackTimer.Start();
     }
 
     public async Task<CallResponse> InitiateCallAsync(CallRequest request)
@@ -132,7 +120,7 @@ public class CallService
     }
 
 
-    private async void ProcessQueue()
+    public async void ProcessQueue()
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<CallRequest>();
@@ -204,7 +192,7 @@ public class CallService
         return true;
     }
 
-    private async Task ProcessCallbackQueue()
+    public async Task ProcessCallbackQueue()
     {
         var batch = new List<CallbackItem>();
 

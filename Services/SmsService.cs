@@ -17,17 +17,11 @@ public class SmsService
     private readonly ConcurrentQueue<SmsRequest> _smsQueue;
     private readonly ConcurrentQueue<CallbackItem> _smsCallbackQueue;
     private readonly QueueSettings _queueSettings;
-
-    private System.Timers.Timer _queueTimer;
-    private System.Timers.Timer _queueCallbackTimer;
-
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private IConfiguration _configuration;
-
     private readonly ProviderFactory _providerFactory;
     private SmsProvider _activeProvider;
-
 
     public SmsService(ProviderFactory providerFactory, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
     {
@@ -39,14 +33,6 @@ public class SmsService
         _queueSettings = queueSettings.Value;
         _smsQueue = new ConcurrentQueue<SmsRequest>();
         _smsCallbackQueue = new ConcurrentQueue<CallbackItem>();
-
-        _queueTimer = new System.Timers.Timer(_queueSettings.SmsQueueIntervalMs);
-        _queueTimer.Elapsed += (sender, e) => ProcessQueue();
-        _queueTimer.Start();
-
-        _queueCallbackTimer = new System.Timers.Timer(_queueSettings.SmsCallbackQueueIntervalMs);
-        _queueCallbackTimer.Elapsed += (sender, e) => ProcessCallbackQueue();
-        _queueCallbackTimer.Start();
     }
 
     public async Task<string> SendSmsAsync(SmsRequest request)
@@ -108,7 +94,7 @@ public class SmsService
         return response.Status;
     }
 
-    private async void ProcessQueue()
+    public async void ProcessQueue()
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<SmsRequest>();
@@ -180,7 +166,7 @@ public class SmsService
         return true;
     }
 
-    private async Task ProcessCallbackQueue()
+    public async Task ProcessCallbackQueue()
     {
         var batch = new List<CallbackItem>();
 

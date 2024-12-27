@@ -87,6 +87,8 @@ builder.Services.AddSingleton<ProviderFactory>();
 builder.Services.AddSingleton<SmsService>();
 builder.Services.AddSingleton<CallService>();
 
+builder.Services.AddSingleton<IHostedService, TimerService>();
+
 var app = builder.Build();
 var provider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();
 if (!app.Environment.IsProduction())
