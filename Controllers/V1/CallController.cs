@@ -27,10 +27,10 @@ public class CallController : ControllerBase
 
         switch (response.Status)
         {
-            case "OK":
+            case nameof(StatusType.Success):
                 return Ok(response);
 
-            case "failure":
+            case nameof(StatusType.Failure):
                 if (response.StatusText.Contains("Invalid phone number or IP address") ||
                     response.StatusText.Contains("Invalid callback URL"))
                 {
@@ -38,7 +38,7 @@ public class CallController : ControllerBase
                 }
                 return StatusCode(500, response);
 
-            case "queued":
+            case nameof(StatusType.Queued):
                 return Accepted(response);
 
             default:
@@ -54,9 +54,9 @@ public class CallController : ControllerBase
     public IActionResult Switch([FromBody] SmsSwitchRequest request)
     {
         if (_callService.SwitchProvider(request.Provider))
-            return Ok(new { status = StatusType.Success.ToString() });
+            return Ok(new { status = StatusType.Success });
 
-        return BadRequest(new { status = StatusType.Failure.ToString(), reason = "Invalid provider code" });
+        return BadRequest(new { status = StatusType.Failure, reason = "Invalid provider code" });
     }
 
     [HttpGet("active-provider")]

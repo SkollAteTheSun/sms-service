@@ -83,11 +83,13 @@ builder.Services.AddHttpClient<SmsRu2Provider>(client =>
 });
 
 builder.Services.AddOpenSearch(builder.Configuration);
+builder.Services.AddSingleton<ValidationService>();
+builder.Services.AddSingleton<ProviderManager>();
 builder.Services.AddSingleton<ProviderFactory>();
 builder.Services.AddSingleton<SmsService>();
 builder.Services.AddSingleton<CallService>();
 
-builder.Services.AddSingleton<IHostedService, TimerService>();
+builder.Services.AddHostedService<TimerService>();
 
 var app = builder.Build();
 var provider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();

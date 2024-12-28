@@ -24,21 +24,26 @@ public class SmsController : ControllerBase
     public async Task<IActionResult> Send([FromBody] SmsRequest request)
     {
         var result = await _smsService.SendSmsAsync(request);
-        if (result == "success")
-            return Ok(new { status = StatusType.Failure.ToString() });
-        if (result == "queued")
-            return Accepted(new { status = StatusType.Success.ToString() });
+        switch (result)
+        {
+            case nameof(StatusType.Success):
+                return Ok(new { status = StatusType.Success });
 
-        return StatusCode(500, new { status = StatusType.Failure.ToString(), reason = result });
+            case nameof(StatusType.Queued):
+                return Accepted(new { status = StatusType.Success });
+
+            default:
+                return StatusCode(500, new { status = StatusType.Failure, reason = result });
+        }
     }
 
     [HttpPost("switch")]
     public IActionResult Switch([FromBody] SmsSwitchRequest request)
     {
         if (_smsService.SwitchProvider(request.Provider))
-            return Ok(new { status = StatusType.Success.ToString() });
+            return Ok(new { status = StatusType.Success });
 
-        return BadRequest(new { status = StatusType.Failure.ToString(), reason = "Invalid provider" });
+        return BadRequest(new { status = StatusType.Failure, reason = "Invalid provider" });
     }
 
     [HttpGet("active-provider")]

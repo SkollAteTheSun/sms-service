@@ -20,17 +20,21 @@ public class CallService
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private readonly IConfiguration _configuration;
+    private readonly ProviderManager _providerManager;
     private readonly ProviderFactory _providerFactory;
     private SmsProvider _activeProvider;
+    private readonly ValidationService _validationService;
 
-    public CallService(ProviderFactory providerFactory, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
+    public CallService(ProviderManager providerManager, ProviderFactory providerFactory, ValidationService validationService, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
     {
         _configuration = configuration;
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
+        _validationService = validationService;
+        _providerManager = providerManager;
         _providerFactory = providerFactory;
-        _activeProvider = GetActiveProviderFromConfig(configuration["ActiveSmsProvider"]);
-        _queueSettings = queueSettings.Value; 
+        _activeProvider = _providerManager.GetActiveProvider(ServiceType.Call);
+        _queueSettings = queueSettings.Value;
         _callQueue = new ConcurrentQueue<CallRequest>();
         _callbackQueue = new ConcurrentQueue<CallbackItem>();
     }
@@ -38,9 +42,9 @@ public class CallService
     public async Task<CallResponse> InitiateCallAsync(CallRequest request)
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
-        request.Phone = CleanPhoneNumber(request.Phone);
+        request.Phone = _validationService.CleanPhoneNumber(request.Phone);
 
-        if (!ValidPhoneNumber(request.Phone) || !ValidIpAddress(request.UserIp))
+        if (!_validationService.ValidPhoneNumber(request.Phone) || !_validationService.ValidIpAddress(request.UserIp))
         {
             return new CallResponse
             {
@@ -49,7 +53,7 @@ public class CallService
             };
         }
 
-        if (!string.IsNullOrEmpty(request.CallbackUrl) && !ValidUrl(request.CallbackUrl))
+        if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl))
         {
             return new CallResponse
             {
@@ -76,9 +80,7 @@ public class CallService
             return response;
         }
 
-        // 220 Сервис временно недоступен, попробуйте чуть позже
-        // 500 Ошибка на сервере. Повторите запрос
-        if (response.StatusCode == 220 || response.StatusCode == 500)
+        if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
         {
             // Если очередь переплнена, возвращаем ошибку
             if (!EnqueueCall(request))
@@ -120,7 +122,7 @@ public class CallService
     }
 
 
-    public async void ProcessQueue()
+    public async Task ProcessQueue()
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<CallRequest>();
@@ -139,9 +141,9 @@ public class CallService
             var response = await provider.CallApiAsync(request.Phone, request.UserIp);
 
             var logRequest = new CallLogRequest(
-               phone: request.Phone, 
-               status: string.Empty, 
-               callId: response.CallId, 
+               phone: request.Phone,
+               status: string.Empty,
+               callId: response.CallId,
                code: response.Code,
                errorMessage: string.Empty
            );
@@ -162,7 +164,7 @@ public class CallService
             }
             else
             {
-                if (response.StatusCode == 500 || response.StatusCode == 220)
+                if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
                 {
                     if (!EnqueueCall(request))
                     {
@@ -219,7 +221,7 @@ public class CallService
 
             if (!success)
             {
-                
+
                 if (_callbackQueue.Count >= _queueSettings.CallCallbackMaxSize)
                 {
                     await LogCallToOpenSearch(new CallLogRequest(null, StatusType.Failure.ToString(), null, null, $"The callback queue is full! Callback queue size: {_callbackQueue.Count}, callback url: {item.CallbackUrl}"));
@@ -292,60 +294,16 @@ public class CallService
         }
     }
 
-    private string CleanPhoneNumber(string phoneNumber)
-    {
-        var cleanedNumber = new StringBuilder();
-
-        foreach (char c in phoneNumber)
-        {
-            if (char.IsDigit(c))
-            {
-                cleanedNumber.Append(c);
-            }
-        }
-        return cleanedNumber.ToString();
-    }
-
-    private bool ValidPhoneNumber(string phoneNumber) => phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8"));
-
-    private bool ValidIpAddress(string ipAddress) => !string.IsNullOrEmpty(ipAddress);
-
-    private bool ValidUrl(string? url)
-    {
-        if (string.IsNullOrEmpty(url))
-            return false;
-
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uriResult) &&
-            (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
-        {
-            return true;
-        }
-        return false;
-    }
-
     public int GetCallQueueStatus() => _callQueue.IsEmpty ? 0 : _callQueue.Count;
     public int GetCallbackQueueStatus() => _callbackQueue.IsEmpty ? 0 : _callbackQueue.Count;
 
     public bool SwitchProvider(SmsProvider provider)
     {
-        if (!Enum.IsDefined(typeof(SmsProvider), provider))
-            return false;
-
-        _activeProvider = provider;
-        return true;
+        return _providerManager.SetActiveProvider(ServiceType.Call, provider);
     }
 
     public SmsProvider GetActiveProvider()
     {
-        return _activeProvider;
-    }
-
-    private SmsProvider GetActiveProviderFromConfig(string providerConfig)
-    {
-        if (Enum.TryParse(providerConfig, true, out SmsProvider provider))
-        {
-            return provider;
-        }
-        return SmsProvider.SmsRu;
+        return _providerManager.GetActiveProvider(ServiceType.Call);
     }
 }

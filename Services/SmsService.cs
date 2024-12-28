@@ -20,16 +20,20 @@ public class SmsService
     private readonly HttpClient _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private IConfiguration _configuration;
+    private readonly ProviderManager _providerManager;
     private readonly ProviderFactory _providerFactory;
     private SmsProvider _activeProvider;
+    private readonly ValidationService _validationService;
 
-    public SmsService(ProviderFactory providerFactory, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
+    public SmsService(ProviderManager providerManager, ProviderFactory providerFactory, ValidationService validationService, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
     {
         _configuration = configuration;
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
+        _validationService = validationService;
+        _providerManager = providerManager;
         _providerFactory = providerFactory;
-        _activeProvider = GetActiveProviderFromConfig(configuration["ActiveSmsProvider"]);
+        _activeProvider = _providerManager.GetActiveProvider(ServiceType.Sms);
         _queueSettings = queueSettings.Value;
         _smsQueue = new ConcurrentQueue<SmsRequest>();
         _smsCallbackQueue = new ConcurrentQueue<CallbackItem>();
@@ -39,11 +43,11 @@ public class SmsService
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         request.MessId = GenerateMessageId();
-        request.Phone = CleanPhoneNumber(request.Phone);
+        request.Phone = _validationService.CleanPhoneNumber(request.Phone);
 
-        if (!ValidPhoneNumber(request.Phone)) return "Error: Invalid phone nubmer";
+        if (!_validationService.ValidPhoneNumber(request.Phone)) return "Error: Invalid phone nubmer";
 
-        if (!string.IsNullOrEmpty(request.CallbackUrl) && !ValidUrl(request.CallbackUrl)) return "Error: Invalid callback URL";
+        if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return "Error: Invalid callback URL";
 
         var response = await provider.SendSmsAsync(request.Phone, request.Message);
 
@@ -60,12 +64,10 @@ public class SmsService
             });
 
             await LogSmsToOpenSearch(new SmsLogRequest(request.Phone, request.Message, response.Status, request.MessId, null));
-            return "success";
+            return StatusType.Success.ToString();
         }
 
-        // 220 Сервис временно недоступен, попробуйте чуть позже
-        // 500 Ошибка на сервере. Повторите запрос
-        if (response.StatusCode == 220 || response.StatusCode == 500)
+        if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
         {
             // Если очередь переплнена, возвращаем ошибку
             if (!EnqueueSms(request))
@@ -86,7 +88,7 @@ public class SmsService
             });
 
             await LogSmsToOpenSearch(new SmsLogRequest(request.Phone, request.Message, StatusType.Queued.ToString(), request.MessId, "No route to host"));
-            return "queued";
+            return StatusType.Queued.ToString();
         }
 
         // Непредвиденные ошибки
@@ -94,7 +96,7 @@ public class SmsService
         return response.Status;
     }
 
-    public async void ProcessQueue()
+    public async Task ProcessQueue()
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<SmsRequest>();
@@ -137,7 +139,7 @@ public class SmsService
             }
             else
             {
-                if (response.StatusCode == 500 || response.StatusCode == 220)
+                if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
                 {
                     if (!EnqueueSms(request))
                     {
@@ -280,58 +282,16 @@ public class SmsService
         return messageId;
     }
 
-    private string CleanPhoneNumber(string phoneNumber)
-    {
-        var cleanedNumber = new StringBuilder();
-
-        foreach (char c in phoneNumber)
-        {
-            if (char.IsDigit(c))
-            {
-                cleanedNumber.Append(c);
-            }
-        }
-        return cleanedNumber.ToString();
-    }
-
-    private bool ValidPhoneNumber(string phoneNumber) => phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8"));
-
-    private bool ValidUrl(string? url)
-    {
-        if (string.IsNullOrEmpty(url))
-            return false;
-
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uriResult) &&
-            (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
-        {
-            return true;
-        }
-        return false;
-    }
-
     public int GetQueueStatus() => _smsQueue.IsEmpty ? 0 : _smsQueue.Count;
     public int GetCallbackQueueStatus() => _smsCallbackQueue.IsEmpty ? 0 : _smsCallbackQueue.Count;
 
     public bool SwitchProvider(SmsProvider provider)
     {
-        if (!Enum.IsDefined(typeof(SmsProvider), provider))
-            return false;
-
-        _activeProvider = provider;
-        return true;
+        return _providerManager.SetActiveProvider(ServiceType.Sms, provider);
     }
 
     public SmsProvider GetActiveProvider()
     {
-        return _activeProvider;
-    }
-
-    private SmsProvider GetActiveProviderFromConfig(string providerConfig)
-    {
-        if (Enum.TryParse(providerConfig, true, out SmsProvider provider))
-        {
-            return provider;
-        }
-        return SmsProvider.SmsRu;
+        return _providerManager.GetActiveProvider(ServiceType.Sms);
     }
 }
