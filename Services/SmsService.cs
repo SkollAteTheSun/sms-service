@@ -43,16 +43,16 @@ public class SmsService
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
         request.MessId = GenerateMessageId();
-        request.Phone = _validationService.CleanPhoneNumber(request.Phone);
+        string cleanedPhoneNumber;
 
-        if (!_validationService.ValidPhoneNumber(request.Phone)) return "Error: Invalid phone nubmer";
+        if (!_validationService.TryValidatePhoneNumber(request.Phone, out cleanedPhoneNumber))  return ErrorMessages.InvalidPhoneNumber;
 
-        if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return "Error: Invalid callback URL";
+        if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return ErrorMessages.InvalidCallbackUrl;
 
         var response = await provider.SendSmsAsync(request.Phone, request.Message);
 
         // Отправка смс прошла успешна
-        if (response.Status == "OK")
+        if (response.Status == SmsRuResponseStatus.OK.ToString())
         {
             await EnqueueCallback(request.CallbackUrl, new
             {
@@ -63,7 +63,7 @@ public class SmsService
                 errorMessage = response.StatusText
             });
 
-            await LogSmsToOpenSearch(new SmsLogRequest(request.Phone, request.Message, response.Status, request.MessId, null));
+            await LogSmsToOpenSearch(CreateSmsLogRequest(request, StatusType.Success.ToString()));
             return StatusType.Success.ToString();
         }
 
@@ -72,8 +72,8 @@ public class SmsService
             // Если очередь переплнена, возвращаем ошибку
             if (!EnqueueSms(request))
             {
-                await LogSmsToOpenSearch(new SmsLogRequest(request.Phone, request.Message, StatusType.Failure.ToString(), request.MessId, "500: Queue limit reached"));
-                return "500: Queue limit reached";
+                await LogSmsToOpenSearch(CreateSmsLogRequest(request, StatusType.Failure.ToString(), ErrorMessages.QueueLimitReached));
+                return ErrorMessages.QueueLimitReached;
             }
 
             // Есть место в очереди - добавляем в очередеь
@@ -87,13 +87,24 @@ public class SmsService
                 errorMessage = response.StatusText
             });
 
-            await LogSmsToOpenSearch(new SmsLogRequest(request.Phone, request.Message, StatusType.Queued.ToString(), request.MessId, "No route to host"));
+            await LogSmsToOpenSearch(CreateSmsLogRequest(request, StatusType.Queued.ToString(), ErrorMessages.NoRouteToHost));
             return StatusType.Queued.ToString();
         }
 
         // Непредвиденные ошибки
-        await LogSmsToOpenSearch(new SmsLogRequest(request.Phone, request.Message, response.Status, request.MessId, response.StatusText));
+        await LogSmsToOpenSearch(CreateSmsLogRequest(request, response.Status, response.StatusText));
         return response.Status;
+    }
+
+    private SmsLogRequest CreateSmsLogRequest(SmsRequest request, string status, string errorMessage = null)
+    {
+        return new SmsLogRequest(
+            request.Phone,
+            request.Message,
+            status,
+            request.MessId,
+            errorMessage
+        );
     }
 
     public async Task ProcessQueue()
@@ -122,7 +133,7 @@ public class SmsService
                 errorMessage: string.Empty
             );
 
-            if (response.Status == "OK")
+            if (response.Status == SmsRuResponseStatus.OK.ToString())
             {
 
                 await EnqueueCallback(request.CallbackUrl, new
@@ -144,7 +155,7 @@ public class SmsService
                     if (!EnqueueSms(request))
                     {
                         logRequest.Status = StatusType.Failure.ToString();
-                        logRequest.ErrorMessage = "500: Queue limit reached";
+                        logRequest.ErrorMessage = ErrorMessages.QueueLimitReached;
                     }
                 }
                 else
@@ -190,9 +201,9 @@ public class SmsService
                 return;
             }
 
-            var (success, statusText) = await SendCallback(item.CallbackUrl, item.CallbackData, item.Attempt);
+            CallbackResponse callbackResponse = await SendCallback(item.CallbackUrl, item.CallbackData, item.Attempt);
 
-            if (!success)
+            if (!callbackResponse.Status)
             {
                 if (_smsCallbackQueue.Count >= _queueSettings.SmsCallbackMaxSize)
                 {
@@ -224,7 +235,7 @@ public class SmsService
         _smsCallbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, 1));
     }
 
-    private async Task<(bool Success, string? StatusText)> SendCallback(string callbackUrl, object callbackData, int attempt)
+    private async Task<CallbackResponse> SendCallback(string callbackUrl, object callbackData, int attempt)
     {
         var jsonContent = new StringContent(JsonConvert.SerializeObject(callbackData), Encoding.UTF8, "application/json");
 
@@ -232,16 +243,28 @@ public class SmsService
         {
             var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
             response.EnsureSuccessStatusCode();
-            return (true, null);
+            return new CallbackResponse
+            {
+                Status = true,
+                StatusText = null,
+            };
         }
         catch (Exception ex)
         {
             if (_smsCallbackQueue.Count >= _queueSettings.SmsCallbackMaxSize)
             {
-                return (false, "Callback queue limit reached");
+                return new CallbackResponse
+                {
+                    Status = false,
+                    StatusText = ErrorMessages.CallbackQueueLimitReached,
+                };
             }
             _smsCallbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, 1));
-            return (false, $"Callback failed and added to queue: {ex.Message}");
+            return new CallbackResponse
+            {
+                Status = false,
+                StatusText = $"Callback failed and added to queue: {ex.Message}",
+            };
         }
     }
 

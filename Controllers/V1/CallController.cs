@@ -56,7 +56,11 @@ public class CallController : ControllerBase
         if (_callService.SwitchProvider(request.Provider))
             return Ok(new { status = StatusType.Success });
 
-        return BadRequest(new { status = StatusType.Failure, reason = "Invalid provider code" });
+        return BadRequest(new StatusResponse
+        {
+            Status = StatusType.Failure.ToString(),
+            Error = "Invalid provider code",
+        });
     }
 
     [HttpGet("active-provider")]

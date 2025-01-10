@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Enums;
+using Kp.Ms.Sms.Entities.Response;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
@@ -33,7 +34,11 @@ public class SmsController : ControllerBase
                 return Accepted(new { status = StatusType.Success });
 
             default:
-                return StatusCode(500, new { status = StatusType.Failure, reason = result });
+                return StatusCode(500, new StatusResponse
+                {
+                    Status = StatusType.Failure.ToString(),
+                    Error = result,
+                });
         }
     }
 
@@ -43,7 +48,11 @@ public class SmsController : ControllerBase
         if (_smsService.SwitchProvider(request.Provider))
             return Ok(new { status = StatusType.Success });
 
-        return BadRequest(new { status = StatusType.Failure, reason = "Invalid provider" });
+        return BadRequest(new StatusResponse
+        {
+            Status = StatusType.Failure.ToString(),
+            Error = "Invalid provider code",
+        });
     }
 
     [HttpGet("active-provider")]

@@ -1,14 +1,25 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Kp.Ms.Sms.Services;
 
 public class ValidationService
 {
-    public bool ValidPhoneNumber(string phoneNumber)
-        => phoneNumber.Length == 11 && (phoneNumber.StartsWith("7") || phoneNumber.StartsWith("8"));
+    public bool TryValidatePhoneNumber(string phoneNumber, out string cleanedNumber)
+    {
+        var regex = new Regex(@"[^0-9]");
+        cleanedNumber = regex.Replace(phoneNumber, "");
 
-    public bool ValidIpAddress(string ipAddress)
-        => !string.IsNullOrEmpty(ipAddress);
+        return cleanedNumber.Length == 11 && (cleanedNumber.StartsWith("7") || cleanedNumber.StartsWith("8"));
+    }
+
+    public bool ValidIp(string? ip)
+    {
+        if (string.IsNullOrEmpty(ip)) return false;
+
+        return IPAddress.TryParse(ip, out var ipAddress) && ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
+    }
 
     public bool ValidUrl(string? url)
     {
@@ -21,19 +32,5 @@ public class ValidationService
         }
 
         return false;
-    }
-
-    public string CleanPhoneNumber(string phoneNumber)
-    {
-        var cleanedNumber = new StringBuilder();
-
-        foreach (char c in phoneNumber)
-        {
-            if (char.IsDigit(c))
-            {
-                cleanedNumber.Append(c);
-            }
-        }
-        return cleanedNumber.ToString();
     }
 }

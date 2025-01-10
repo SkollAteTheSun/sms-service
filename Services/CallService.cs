@@ -42,14 +42,14 @@ public class CallService
     public async Task<CallResponse> InitiateCallAsync(CallRequest request)
     {
         var provider = _providerFactory.GetProvider(_activeProvider);
-        request.Phone = _validationService.CleanPhoneNumber(request.Phone);
+        string cleanedPhoneNumber;
 
-        if (!_validationService.ValidPhoneNumber(request.Phone) || !_validationService.ValidIpAddress(request.UserIp))
+        if (!_validationService.TryValidatePhoneNumber(request.Phone, out cleanedPhoneNumber) || !_validationService.ValidIp(request.UserIp))
         {
             return new CallResponse
             {
                 Status = StatusType.Failure.ToString(),
-                StatusText = "Invalid phone number or IP address"
+                StatusText = ErrorMessages.InvalidPhoneNumberOrIp
             };
         }
 
@@ -58,14 +58,14 @@ public class CallService
             return new CallResponse
             {
                 Status = StatusType.Failure.ToString(),
-                StatusText = "Invalid callback URL"
+                StatusText = ErrorMessages.InvalidCallbackUrl
             };
         }
 
         var response = await provider.CallApiAsync(request.Phone, request.UserIp);
 
         // Звонок совершен успешно
-        if (response.Status == "OK")
+        if (response.Status == SmsRuResponseStatus.OK.ToString())
         {
             await EnqueueCallback(request.CallbackUrl, new
             {
@@ -76,23 +76,22 @@ public class CallService
                 errorMessage = response.StatusText
             });
 
-            await LogCallToOpenSearch(new CallLogRequest(request.Phone, StatusType.Success.ToString(), response.CallId, response.Code, response.StatusText));
+            await LogCallToOpenSearch(CreateCallLogRequest(request, response, StatusType.Success.ToString()));
             return response;
         }
 
         if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
         {
             // Если очередь переплнена, возвращаем ошибку
-            if (!EnqueueCall(request))
+            if (!EnqueueCall(request))  
             {
                 var queueErrorResponse = new CallResponse
                 {
                     Status = StatusType.Failure.ToString(),
-                    StatusText = "500: Queue limit reached"
+                    StatusText = ErrorMessages.QueueLimitReached
                 };
 
-                await LogCallToOpenSearch(new CallLogRequest(request.Phone, queueErrorResponse.Status, response.CallId, response.Code, queueErrorResponse.StatusText));
-
+                await LogCallToOpenSearch(CreateCallLogRequest(request, response, queueErrorResponse.Status, queueErrorResponse.StatusText));
                 return queueErrorResponse;
             }
 
@@ -100,7 +99,7 @@ public class CallService
             var queuedResponse = new CallResponse
             {
                 Status = StatusType.Queued.ToString(),
-                StatusText = "Call has been queued"
+                StatusText = ErrorMessages.NoRouteToHost
             };
 
             await EnqueueCallback(request.CallbackUrl, new
@@ -112,15 +111,25 @@ public class CallService
                 errorMessage = response.StatusText
             });
 
-            await LogCallToOpenSearch(new CallLogRequest(request.Phone, queuedResponse.Status, response.CallId, response.Code, queuedResponse.StatusText));
+            await LogCallToOpenSearch(CreateCallLogRequest(request, response, queuedResponse.Status, queuedResponse.StatusText));
             return queuedResponse;
         }
 
         // Непредвиденные ошибки
-        await LogCallToOpenSearch(new CallLogRequest(request.Phone, response.Status, response.CallId, response.Code, response.StatusText));
+        await LogCallToOpenSearch(CreateCallLogRequest(request, response));
         return response;
     }
 
+    private CallLogRequest CreateCallLogRequest(CallRequest request, CallResponse response, string statusOverride = null, string statusTextOverride = null)
+    {
+        return new CallLogRequest(
+            request.Phone,
+            statusOverride ?? response.Status,
+            response.CallId,
+            response.Code,
+            statusTextOverride ?? response.StatusText
+        );
+    }
 
     public async Task ProcessQueue()
     {
@@ -148,7 +157,7 @@ public class CallService
                errorMessage: string.Empty
            );
 
-            if (response.Status == "OK")
+            if (response.Status == SmsRuResponseStatus.OK.ToString())
             {
                 await EnqueueCallback(request.CallbackUrl, new
                 {
@@ -169,7 +178,7 @@ public class CallService
                     if (!EnqueueCall(request))
                     {
                         logRequest.Status = StatusType.Failure.ToString();
-                        logRequest.ErrorMessage = "500: Queue limit reached";
+                        logRequest.ErrorMessage = ErrorMessages.QueueLimitReached;
                     }
                 }
                 else
@@ -217,9 +226,9 @@ public class CallService
                 return;
             }
 
-            var (success, statusText) = await SendCallback(item.CallbackUrl, item.CallbackData, item.Attempt);
+            CallbackResponse callbackResponse = await SendCallback(item.CallbackUrl, item.CallbackData, item.Attempt);
 
-            if (!success)
+            if (!callbackResponse.Status)
             {
 
                 if (_callbackQueue.Count >= _queueSettings.CallCallbackMaxSize)
@@ -251,7 +260,7 @@ public class CallService
         _callbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, 1));
     }
 
-    private async Task<(bool Success, string? StatusText)> SendCallback(string callbackUrl, object callbackData, int attempt)
+    private async Task<CallbackResponse> SendCallback(string callbackUrl, object callbackData, int attempt)
     {
         var jsonContent = new StringContent(JsonConvert.SerializeObject(callbackData), Encoding.UTF8, "application/json");
 
@@ -259,17 +268,28 @@ public class CallService
         {
             var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
             response.EnsureSuccessStatusCode();
-            return (true, null);
+            return new CallbackResponse
+            {
+                Status = true,
+                StatusText = null,
+            };
         }
         catch (Exception ex)
         {
             if (_callbackQueue.Count >= _queueSettings.CallCallbackMaxSize)
             {
-                return (false, "Callback queue limit reached");
+                return new CallbackResponse
+                {
+                    Status = false,
+                    StatusText =  ErrorMessages.CallbackQueueLimitReached,
+                };
             }
             _callbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, attempt + 1));
-
-            return (false, $"Callback failed and added to queue: {ex.Message}");
+            return new CallbackResponse
+            {
+                Status = false,
+                StatusText = $"Callback failed and added to queue: {ex.Message}",
+            };
         }
     }
 
