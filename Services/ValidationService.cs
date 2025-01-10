@@ -6,7 +6,7 @@ namespace Kp.Ms.Sms.Services;
 
 public class ValidationService
 {
-    public bool TryValidatePhoneNumber(string phoneNumber, out string cleanedNumber)
+    public bool ValidPhoneNumber(string phoneNumber, out string cleanedNumber)
     {
         var regex = new Regex(@"[^0-9]");
         cleanedNumber = regex.Replace(phoneNumber, "");
@@ -25,12 +25,7 @@ public class ValidationService
     {
         if (string.IsNullOrEmpty(url)) return false;
 
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uriResult) &&
-            (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
-        {
-            return true;
-        }
-
-        return false;
+        var regex = new Regex(@"(https:\/\/www\.|http:\/\/www\.|https:\/\/|http:\/\/)?[a-zA-Z]{2,}(\.[a-zA-Z]{2,})(\.[a-zA-Z]{2,})?\/[a-zA-Z0-9]{2,}|((https:\/\/www\.|http:\/\/www\.|https:\/\/|http:\/\/)?[a-zA-Z]{2,}(\.[a-zA-Z]{2,})(\.[a-zA-Z]{2,})?)|(https:\/\/www\.|http:\/\/www\.|https:\/\/|http:\/\/)?[a-zA-Z0-9]{2,}\.[a-zA-Z0-9]{2,}\.[a-zA-Z0-9]{2,}(\.[a-zA-Z0-9]{2,})?");
+        return regex.IsMatch(url);
     }
 }

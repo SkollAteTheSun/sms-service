@@ -45,7 +45,7 @@ public class SmsService
         request.MessId = GenerateMessageId();
         string cleanedPhoneNumber;
 
-        if (!_validationService.TryValidatePhoneNumber(request.Phone, out cleanedPhoneNumber))  return ErrorMessages.InvalidPhoneNumber;
+        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber))  return ErrorMessages.InvalidPhoneNumber;
 
         if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return ErrorMessages.InvalidCallbackUrl;
 

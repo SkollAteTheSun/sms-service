@@ -44,7 +44,7 @@ public class CallService
         var provider = _providerFactory.GetProvider(_activeProvider);
         string cleanedPhoneNumber;
 
-        if (!_validationService.TryValidatePhoneNumber(request.Phone, out cleanedPhoneNumber) || !_validationService.ValidIp(request.UserIp))
+        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber) || !_validationService.ValidIp(request.UserIp))
         {
             return new CallResponse
             {
