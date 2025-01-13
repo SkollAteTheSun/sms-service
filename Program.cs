@@ -7,6 +7,7 @@ using Kp.Ms.Sms.Factories;
 using Kp.Ms.Sms.Services;
 using Kp.Ms.Sms.Middlewares;
 using Microsoft.OpenApi.Models;
+using Kp.Ms.Sms.Entities.Entity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,6 +63,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureOptions<ConfigureSwaggerOptions>();
 
 builder.Services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
+builder.Services.Configure<QueueSettings>(builder.Configuration.GetSection("QueueSettings"));
 
 builder.Services.AddCors(c => c.AddPolicy("cors", opt =>
 {
@@ -81,9 +83,13 @@ builder.Services.AddHttpClient<SmsRu2Provider>(client =>
 });
 
 builder.Services.AddOpenSearch(builder.Configuration);
-builder.Services.AddSingleton<SmsProviderFactory>();
+builder.Services.AddSingleton<ValidationService>();
+builder.Services.AddSingleton<ProviderManager>();
+builder.Services.AddSingleton<ProviderFactory>();
 builder.Services.AddSingleton<SmsService>();
 builder.Services.AddSingleton<CallService>();
+
+builder.Services.AddHostedService<TimerService>();
 
 var app = builder.Build();
 var provider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();

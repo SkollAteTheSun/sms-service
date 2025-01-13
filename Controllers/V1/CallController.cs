@@ -1,4 +1,5 @@
 ﻿using Asp.Versioning;
+using Kp.Ms.Sms.Entities.Enums;
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Services;
@@ -24,17 +25,12 @@ public class CallController : ControllerBase
     {
         var response = await _callService.InitiateCallAsync(request);
 
-        if (string.IsNullOrEmpty(response.StatusText))
-        {
-            response.StatusText = "Unexpected error occurred";
-        }
-
         switch (response.Status)
         {
-            case "OK":
+            case nameof(StatusType.Success):
                 return Ok(response);
 
-            case "failure":
+            case nameof(StatusType.Failure):
                 if (response.StatusText.Contains("Invalid phone number or IP address") ||
                     response.StatusText.Contains("Invalid callback URL"))
                 {
@@ -42,16 +38,35 @@ public class CallController : ControllerBase
                 }
                 return StatusCode(500, response);
 
-            case "queued":
+            case nameof(StatusType.Queued):
                 return Accepted(response);
 
             default:
                 return StatusCode(500, new CallResponse
                 {
-                    Status = "failure",
+                    Status = StatusType.Failure.ToString(),
                     StatusText = response.StatusText,
                 });
         }
+    }
+
+    [HttpPost("switch")]
+    public IActionResult Switch([FromBody] SmsSwitchRequest request)
+    {
+        if (_callService.SwitchProvider(request.Provider))
+            return Ok(new { status = StatusType.Success });
+
+        return BadRequest(new StatusResponse
+        {
+            Status = StatusType.Failure.ToString(),
+            Error = "Invalid provider code",
+        });
+    }
+
+    [HttpGet("active-provider")]
+    public IActionResult GetActiveProvider()
+    {
+        return Ok(new { activeProvider = _callService.GetActiveProvider() });
     }
 
     [HttpGet("queue-status")]

@@ -19,6 +19,9 @@ public class CallResponse
     [JsonProperty("balance")]
     public double? Balance { get; set; }
 
+    [JsonProperty("status_code")]
+    public int? StatusCode { get; set; }
+
     [JsonProperty("status_text")]
     public string? StatusText { get; set; }
 }

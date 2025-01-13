@@ -3,6 +3,8 @@ using Kp.Ms.Sms.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Kp.Ms.Sms.Entities.Request;
+using Kp.Ms.Sms.Entities.Enums;
+using Kp.Ms.Sms.Entities.Response;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
@@ -23,21 +25,34 @@ public class SmsController : ControllerBase
     public async Task<IActionResult> Send([FromBody] SmsRequest request)
     {
         var result = await _smsService.SendSmsAsync(request);
-        if (result == "success")
-            return Ok(new { status = "success" });
-        if (result == "queued")
-            return Accepted(new { status = "success" });
+        switch (result)
+        {
+            case nameof(StatusType.Success):
+                return Ok(new { status = StatusType.Success });
 
-        return StatusCode(500, new { status = "failure", reason = result });
+            case nameof(StatusType.Queued):
+                return Accepted(new { status = StatusType.Success });
+
+            default:
+                return StatusCode(500, new StatusResponse
+                {
+                    Status = StatusType.Failure.ToString(),
+                    Error = result,
+                });
+        }
     }
 
     [HttpPost("switch")]
     public IActionResult Switch([FromBody] SmsSwitchRequest request)
     {
-        if (_smsService.SwitchProvider(request.MethodCode))
-            return Ok(new { status = "success" });
+        if (_smsService.SwitchProvider(request.Provider))
+            return Ok(new { status = StatusType.Success });
 
-        return BadRequest(new { status = "failure", reason = "Invalid provider code" });
+        return BadRequest(new StatusResponse
+        {
+            Status = StatusType.Failure.ToString(),
+            Error = "Invalid provider code",
+        });
     }
 
     [HttpGet("active-provider")]
