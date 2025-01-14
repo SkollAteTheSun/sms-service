@@ -71,7 +71,7 @@ public class CallService
             };
         }
 
-        var userIp = string.IsNullOrEmpty(request.UserIp) ? "-1" : request.UserIp;
+        var userIp = string.IsNullOrEmpty(request.UserIp) ? "-1" : request.UserIp; // значение по умолчанию для sms.ru
 
         var response = await provider.CallApiAsync(request.Phone, userIp);
 
