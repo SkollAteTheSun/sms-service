@@ -12,6 +12,8 @@ public class SmsProviderBase : IProvider
     protected readonly string _fromKey;
     protected readonly string _urlKey;
 
+    protected virtual string DefaultUserIp => "-1";
+
     protected SmsProviderBase(IConfiguration configuration, HttpClient client, string apiIdKey, string fromKey, string urlKey)
     {
         _configuration = configuration;
@@ -44,10 +46,12 @@ public class SmsProviderBase : IProvider
         return JsonConvert.DeserializeObject<SmsResponse>(jsonString) ?? throw new Exception("No sms response");
     }
 
-    public async Task<CallResponse> CallApiAsync(string phone, string userIp)
+    public async Task<CallResponse> CallApiAsync(string phone, string? userIp)
     {
+        var ip = string.IsNullOrEmpty(userIp) ? DefaultUserIp : userIp;
+
         var apiId = _configuration[_apiIdKey];
-        var url = $"{_configuration[_urlKey]}/code/call?phone={phone}&ip={userIp}&api_id={apiId}";
+        var url = $"{_configuration[_urlKey]}/code/call?phone={phone}&ip={ip}&api_id={apiId}";
 
         var response = await _client.GetAsync(url);
         var data = await response.Content.ReadAsStringAsync();

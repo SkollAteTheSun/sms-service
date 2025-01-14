@@ -20,7 +20,7 @@ public class CallController : ControllerBase
         _callService = callService;
     }
 
-    [HttpPost("call")]
+    [HttpPost("send")]
     public async Task<IActionResult> InitiateCall([FromBody] CallRequest request)
     {
         var response = await _callService.InitiateCallAsync(request);

@@ -44,12 +44,21 @@ public class CallService
         var provider = _providerFactory.GetProvider(_activeProvider);
         string cleanedPhoneNumber;
 
-        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber) || !_validationService.ValidIp(request.UserIp))
+        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber))
         {
             return new CallResponse
             {
                 Status = StatusType.Failure.ToString(),
-                StatusText = ErrorMessages.InvalidPhoneNumberOrIp
+                StatusText = ErrorMessages.InvalidPhoneNumber
+            };
+        }
+
+        if (!string.IsNullOrEmpty(request.UserIp) && !_validationService.ValidIp(request.UserIp))
+        {
+            return new CallResponse
+            {
+                Status = StatusType.Failure.ToString(),
+                StatusText = ErrorMessages.InvalidIp
             };
         }
 
@@ -67,16 +76,18 @@ public class CallService
         // Звонок совершен успешно
         if (response.Status == SmsRuResponseStatus.OK.ToString())
         {
+            response.Status = StatusType.Success.ToString();
+
             await EnqueueCallback(request.CallbackUrl, new
             {
                 phone = request.Phone,
                 callId = response.CallId,
-                status = StatusType.Success.ToString(),
+                status = response.Status,
                 code = response.Code,
                 errorMessage = response.StatusText
             });
 
-            await LogCallToOpenSearch(CreateCallLogRequest(request, response, StatusType.Success.ToString()));
+            await LogCallToOpenSearch(CreateCallLogRequest(request, response, response.Status));
             return response;
         }
 
@@ -106,7 +117,7 @@ public class CallService
             {
                 phone = request.Phone,
                 callId = response.CallId,
-                status = response.Status,
+                status = queuedResponse.Status,
                 code = response.Code,
                 errorMessage = response.StatusText
             });

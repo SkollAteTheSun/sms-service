@@ -16,8 +16,6 @@ public class ValidationService
 
     public bool ValidIp(string? ip)
     {
-        if (string.IsNullOrEmpty(ip)) return false;
-
         return IPAddress.TryParse(ip, out var ipAddress) && ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
     }
 
