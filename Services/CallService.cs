@@ -44,12 +44,21 @@ public class CallService
         var provider = _providerFactory.GetProvider(_activeProvider);
         string cleanedPhoneNumber;
 
-        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber) || !_validationService.ValidIp(request.UserIp))
+        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber))
         {
             return new CallResponse
             {
                 Status = StatusType.Failure.ToString(),
-                StatusText = ErrorMessages.InvalidPhoneNumberOrIp
+                StatusText = ErrorMessages.InvalidPhoneNumber
+            };
+        }
+
+        if (!string.IsNullOrEmpty(request.UserIp) && !_validationService.ValidIp(request.UserIp))
+        {
+            return new CallResponse
+            {
+                Status = StatusType.Failure.ToString(),
+                StatusText = ErrorMessages.InvalidIp
             };
         }
 
@@ -62,7 +71,9 @@ public class CallService
             };
         }
 
-        var response = await provider.CallApiAsync(request.Phone, request.UserIp);
+        var userIp = string.IsNullOrEmpty(request.UserIp) ? "-1" : request.UserIp;
+
+        var response = await provider.CallApiAsync(request.Phone, userIp);
 
         // Звонок совершен успешно
         if (response.Status == SmsRuResponseStatus.OK.ToString())

@@ -11,8 +11,8 @@ public class CallRequest
     [DefaultValue(null)]
     public string? CallbackUrl { get; set; }
 
-    [DefaultValue(-1)]
-    public string UserIp { get; set; } = string.Empty;
+    [DefaultValue(null)]
+    public string? UserIp { get; set; } = string.Empty;
 
     [JsonIgnore]
     public string CallId { get; set; } = string.Empty;
