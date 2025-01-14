@@ -67,16 +67,18 @@ public class CallService
         // Звонок совершен успешно
         if (response.Status == SmsRuResponseStatus.OK.ToString())
         {
+            response.Status = StatusType.Success.ToString();
+
             await EnqueueCallback(request.CallbackUrl, new
             {
                 phone = request.Phone,
                 callId = response.CallId,
-                status = StatusType.Success.ToString(),
+                status = response.Status,
                 code = response.Code,
                 errorMessage = response.StatusText
             });
 
-            await LogCallToOpenSearch(CreateCallLogRequest(request, response, StatusType.Success.ToString()));
+            await LogCallToOpenSearch(CreateCallLogRequest(request, response, response.Status));
             return response;
         }
 
@@ -106,7 +108,7 @@ public class CallService
             {
                 phone = request.Phone,
                 callId = response.CallId,
-                status = response.Status,
+                status = queuedResponse.Status,
                 code = response.Code,
                 errorMessage = response.StatusText
             });

@@ -59,7 +59,7 @@ public class SmsService
                 phone = request.Phone,
                 message = request.Message,
                 messId = request.MessId,
-                status = response.Status,
+                status = StatusType.Success.ToString(),
                 errorMessage = response.StatusText
             });
 
@@ -83,7 +83,7 @@ public class SmsService
                 phone = request.Phone,
                 message = request.Message,
                 messId = request.MessId,
-                status = response.Status,
+                status = StatusType.Queued.ToString(),
                 errorMessage = response.StatusText
             });
 

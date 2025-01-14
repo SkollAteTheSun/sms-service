@@ -18,6 +18,8 @@ public class ValidationService
     {
         if (string.IsNullOrEmpty(ip)) return false;
 
+        if (ip == "-1") return true;
+
         return IPAddress.TryParse(ip, out var ipAddress) && ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
     }
 
