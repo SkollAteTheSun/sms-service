@@ -1,0 +1,37 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop" && $CI_PIPELINE_SOURCE == "push"
+      when: always
+    - when: never
+
+stages:
+  - backup
+  - build
+  - deploy
+
+backup_job:
+  stage: backup
+  script: 
+    - rm -r $MS_PATH/backup/*
+    - cp -r $MS_PATH/web/* $MS_PATH/backup
+    - echo "backup has been created"
+
+build_job:
+  stage: build
+  script:
+    - cd $MS_PATH/src/sms
+    - git checkout .
+    - git checkout develop
+    - git pull https://$USER_NAME:$TOKEN@gitlab.karousel.ru/dec/sharpei/sms/
+    - dotnet publish -r linux-x64 --property:PublishDir=$MS_PATH/src/publish /p:EnvironmentName=Staging --self-contained
+    - echo "build is done"
+
+deploy_job:
+  stage: deploy
+  script:
+    - sudo systemctl stop $SERVICE
+    - rm -r $MS_PATH/web/*
+    - mv $MS_PATH/src/publish/*  $MS_PATH/web
+    - sudo systemctl start $SERVICE
+    - sudo systemctl status $SERVICE
+    - echo "deploy is done"
