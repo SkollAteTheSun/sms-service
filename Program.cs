@@ -91,7 +91,13 @@ builder.Services.AddSingleton<CallService>();
 
 builder.Services.AddHostedService<TimerService>();
 
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
+
+app.MapHealthChecks("/healthz")
+    .RequireHost(builder.Configuration.GetSection("MonitoringHosts").Get<string[]>());
+
 var provider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();
 if (!app.Environment.IsProduction())
 {
