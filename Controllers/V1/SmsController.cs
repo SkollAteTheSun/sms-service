@@ -5,10 +5,12 @@ using Swashbuckle.AspNetCore.Annotations;
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Enums;
 using Kp.Ms.Sms.Entities.Response;
+using Kp.Ms.Sms.Attributes;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
 [ApiController]
+[TokenAuthorization]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [SwaggerTag("Тестовый контроллер")]

@@ -1,4 +1,5 @@
 ﻿using Asp.Versioning;
+using Kp.Ms.Sms.Attributes;
 using Kp.Ms.Sms.Entities.Enums;
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
@@ -8,6 +9,7 @@ using Swashbuckle.AspNetCore.Annotations;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 [ApiController]
+[TokenAuthorization]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [SwaggerTag("Контроллер для звонков")]
