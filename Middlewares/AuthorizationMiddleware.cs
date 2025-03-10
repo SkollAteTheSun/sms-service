@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using Kp.Ms.Sms.Attributes;
+using System.Net;
 
 namespace Kp.Ms.Sms.Middlewares;
 
@@ -12,6 +13,18 @@ public class AuthorizationMiddleware
     }
 
     public async Task InvokeAsync(HttpContext context, IConfiguration configuration)
+    {
+        if (context.GetEndpoint()?.Metadata.GetMetadata<TokenAuthorizationAttribute>() is not null)
+        {
+            await HandleHttpRequestWithAuthorization(context, configuration);
+        }
+        else
+        {
+            await _next(context);
+        }
+    }
+
+    private async Task HandleHttpRequestWithAuthorization(HttpContext context, IConfiguration configuration)
     {
         try
         {
