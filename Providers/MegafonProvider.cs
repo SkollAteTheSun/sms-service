@@ -23,10 +23,10 @@ public class MegafonProvider : Provider
     public override async Task<SmsResponse> SendSmsAsync(string phone, string message)
     {
         try { 
-            var parameters = new Dictionary<string, string>
+            var parameters = new Dictionary<string, object>
             {
                 { "from", Settings.FromNumber },
-                { "to", phone },
+                { "to", Convert.ToInt32(phone) },
                 { "message", message }
             };
 
