@@ -9,126 +9,152 @@ using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
 using Microsoft.Extensions.Options;
 using Kp.Ms.Sms.Entities.Enums;
+using Kp.Ms.Sms.Config;
+using Kp.Ms.Sms.Providers;
+using Common.HttpClientWrapper;
 
 namespace Kp.Ms.Sms.Services;
 
 public class CallService
 {
-    private readonly ConcurrentQueue<CallRequest> _callQueue;
-    private readonly ConcurrentQueue<CallbackItem> _callbackQueue;
+    private readonly ILogger<CallService> _logger;
+    private readonly ConcurrentQueue<CallRequest> _callQueue = [];
+    private readonly ConcurrentQueue<CallbackItem> _callbackQueue = [];
     private readonly QueueSettings _queueSettings;
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientWrapper _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private readonly IConfiguration _configuration;
-    private readonly ProviderManager _providerManager;
     private readonly ProviderFactory _providerFactory;
-    private SmsProvider _activeProvider;
+    private Entities.Enums.SmsProvider _activeProvider;
     private readonly ValidationService _validationService;
 
-    public CallService(ProviderManager providerManager, ProviderFactory providerFactory, ValidationService validationService, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
+    private Dictionary<string, Organization> _organizations =>
+        _configuration.GetSection("Settings:Organizations")?.Get<Dictionary<string, Organization>>();
+
+    public CallService(
+        ILogger<CallService> logger,
+        ProviderFactory providerFactory,
+        ValidationService validationService,
+        IConfiguration configuration,
+        IHttpClientWrapper httpClient,
+        OpenSearchClient openSearchClient,
+        IOptions<QueueSettings> queueSettings)
     {
+        _logger = logger;
         _configuration = configuration;
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
         _validationService = validationService;
-        _providerManager = providerManager;
         _providerFactory = providerFactory;
-        _activeProvider = _providerManager.GetActiveProvider(ServiceType.Call);
         _queueSettings = queueSettings.Value;
-        _callQueue = new ConcurrentQueue<CallRequest>();
-        _callbackQueue = new ConcurrentQueue<CallbackItem>();
     }
 
     public async Task<CallResponse> InitiateCallAsync(CallRequest request)
     {
-        var provider = _providerFactory.GetProvider(_activeProvider);
-        string cleanedPhoneNumber;
-
-        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber))
+        try
         {
-            return new CallResponse
+            if (!_organizations.TryGetValue(request.OrganizationName, out var organization))
             {
-                Status = StatusType.Failure.ToString(),
-                StatusText = ErrorMessages.InvalidPhoneNumber
-            };
-        }
-
-        if (!string.IsNullOrEmpty(request.UserIp) && !_validationService.ValidIp(request.UserIp))
-        {
-            return new CallResponse
-            {
-                Status = StatusType.Failure.ToString(),
-                StatusText = ErrorMessages.InvalidIp
-            };
-        }
-
-        if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl))
-        {
-            return new CallResponse
-            {
-                Status = StatusType.Failure.ToString(),
-                StatusText = ErrorMessages.InvalidCallbackUrl
-            };
-        }
-
-        var response = await provider.CallApiAsync(request.Phone, request.UserIp);
-
-        // Звонок совершен успешно
-        if (response.Status == SmsRuResponseStatus.OK.ToString())
-        {
-            response.Status = StatusType.Success.ToString();
-
-            await EnqueueCallback(request.CallbackUrl, new
-            {
-                phone = request.Phone,
-                callId = response.CallId,
-                status = response.Status,
-                code = response.Code,
-                errorMessage = response.StatusText
-            });
-
-            await LogCallToOpenSearch(CreateCallLogRequest(request, response, response.Status));
-            return response;
-        }
-
-        if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
-        {
-            // Если очередь переплнена, возвращаем ошибку
-            if (!EnqueueCall(request))  
-            {
-                var queueErrorResponse = new CallResponse
-                {
-                    Status = StatusType.Failure.ToString(),
-                    StatusText = ErrorMessages.QueueLimitReached
-                };
-
-                await LogCallToOpenSearch(CreateCallLogRequest(request, response, queueErrorResponse.Status, queueErrorResponse.StatusText));
-                return queueErrorResponse;
+                throw new ArgumentException($"Organization with name \"{request.OrganizationName}\" not exist.");
             }
 
-            // Есть место в очереди - добавляем в очередеь
-            var queuedResponse = new CallResponse
-            {
-                Status = StatusType.Queued.ToString(),
-                StatusText = ErrorMessages.NoRouteToHost
-            };
+            var provider = GetProviderForOrganization(request.OrganizationName);
+            string cleanedPhoneNumber;
 
-            await EnqueueCallback(request.CallbackUrl, new
+            if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber))
             {
-                phone = request.Phone,
-                callId = response.CallId,
-                status = queuedResponse.Status,
-                code = response.Code,
-                errorMessage = response.StatusText
-            });
+                return new CallResponse
+                {
+                    Status = StatusType.Failure.ToString(),
+                    StatusText = ErrorMessages.InvalidPhoneNumber
+                };
+            }
 
-            await LogCallToOpenSearch(CreateCallLogRequest(request, response, queuedResponse.Status, queuedResponse.StatusText));
-            return queuedResponse;
+            if (!string.IsNullOrEmpty(request.UserIp) && !_validationService.ValidIp(request.UserIp))
+            {
+                return new CallResponse
+                {
+                    Status = StatusType.Failure.ToString(),
+                    StatusText = ErrorMessages.InvalidIp
+                };
+            }
+
+            if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl))
+            {
+                return new CallResponse
+                {
+                    Status = StatusType.Failure.ToString(),
+                    StatusText = ErrorMessages.InvalidCallbackUrl
+                };
+            }
+
+            var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp);
+
+            // Звонок совершен успешно
+            if (response.Status == SmsRuResponseStatus.OK.ToString())
+            {
+                response.Status = StatusType.Success.ToString();
+
+                await EnqueueCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    callId = response.CallId,
+                    status = response.Status,
+                    code = response.Code,
+                    errorMessage = response.StatusText
+                });
+
+                await LogCallToOpenSearch(CreateCallLogRequest(request, response, response.Status));
+                return response;
+            }
+
+            if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
+            {
+                // Если очередь переплнена, возвращаем ошибку
+                if (!EnqueueCall(request))
+                {
+                    var queueErrorResponse = new CallResponse
+                    {
+                        Status = StatusType.Failure.ToString(),
+                        StatusText = ErrorMessages.QueueLimitReached
+                    };
+
+                    await LogCallToOpenSearch(CreateCallLogRequest(request, response, queueErrorResponse.Status, queueErrorResponse.StatusText));
+                    return queueErrorResponse;
+                }
+
+                // Есть место в очереди - добавляем в очередеь
+                var queuedResponse = new CallResponse
+                {
+                    Status = StatusType.Queued.ToString(),
+                    StatusText = ErrorMessages.NoRouteToHost
+                };
+
+                await EnqueueCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    callId = response.CallId,
+                    status = queuedResponse.Status,
+                    code = response.Code,
+                    errorMessage = response.StatusText
+                });
+
+                await LogCallToOpenSearch(CreateCallLogRequest(request, response, queuedResponse.Status, queuedResponse.StatusText));
+                return queuedResponse;
+            }
+
+            // Непредвиденные ошибки
+            await LogCallToOpenSearch(CreateCallLogRequest(request, response));
+            return response;
         }
-
-        // Непредвиденные ошибки
-        await LogCallToOpenSearch(CreateCallLogRequest(request, response));
-        return response;
+        catch (Exception ex)
+        {
+            return new CallResponse
+            {
+                Status = StatusType.Failure.ToString(),
+                StatusText = ex.Message
+            };
+        }
     }
 
     private CallLogRequest CreateCallLogRequest(CallRequest request, CallResponse response, string statusOverride = null, string statusTextOverride = null)
@@ -144,7 +170,6 @@ public class CallService
 
     public async Task ProcessQueue()
     {
-        var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<CallRequest>();
         for (int i = 0; i < _queueSettings.CallBatchSize && _callQueue.TryDequeue(out var request); i++)
         {
@@ -158,7 +183,12 @@ public class CallService
 
         foreach (var request in batch)
         {
-            var response = await provider.CallApiAsync(request.Phone, request.UserIp);
+            if (!_organizations.TryGetValue(request.OrganizationName, out var organization))
+            {
+                _logger.LogError($"Organization with name \"{request.OrganizationName}\" not exist.");
+                continue;
+            }
+            var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp);
 
             var logRequest = new CallLogRequest(
                phone: request.Phone,
@@ -277,8 +307,7 @@ public class CallService
 
         try
         {
-            var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
-            response.EnsureSuccessStatusCode();
+            await _httpClient.PostAsync<object, object>(callbackUrl, jsonContent);
             return new CallbackResponse
             {
                 Status = true,
@@ -325,16 +354,17 @@ public class CallService
         }
     }
 
+    private Provider GetProviderForOrganization(string organizationName)
+    {
+        var isExistOrganization = _organizations.TryGetValue(organizationName, out var organization);
+        if (!isExistOrganization)
+        {
+            throw new ArgumentException($"Organization with name \"{organizationName}\" not exist.");
+        }
+
+        return _providerFactory.GetProvider(organization.GetDefaultProviderSettings());
+    }
+
     public int GetCallQueueStatus() => _callQueue.IsEmpty ? 0 : _callQueue.Count;
     public int GetCallbackQueueStatus() => _callbackQueue.IsEmpty ? 0 : _callbackQueue.Count;
-
-    public bool SwitchProvider(SmsProvider provider)
-    {
-        return _providerManager.SetActiveProvider(ServiceType.Call, provider);
-    }
-
-    public SmsProvider GetActiveProvider()
-    {
-        return _providerManager.GetActiveProvider(ServiceType.Call);
-    }
 }

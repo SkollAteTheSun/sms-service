@@ -8,8 +8,17 @@ using Kp.Ms.Sms.Services;
 using Kp.Ms.Sms.Middlewares;
 using Microsoft.OpenApi.Models;
 using Kp.Ms.Sms.Entities.Entity;
+using Kp.Ms.Sms.Providers;
+using Common.HttpClientWrapper;
+using Configurator.Services.Impl;
+using NLog.Web;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetRequiredSection("ConnectionString").Get<string>()!;
+builder.AddConfigurationModule(connectionString);
+
+builder.Host.UseNLog();
 
 builder.Services
     .AddControllers()
@@ -63,7 +72,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureOptions<ConfigureSwaggerOptions>();
 
 builder.Services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
-builder.Services.Configure<QueueSettings>(builder.Configuration.GetSection("QueueSettings"));
+builder.Services.Configure<QueueSettings>(builder.Configuration.GetSection("Settings:QueueSettings"));
 
 builder.Services.AddCors(c => c.AddPolicy("cors", opt =>
 {
@@ -72,19 +81,9 @@ builder.Services.AddCors(c => c.AddPolicy("cors", opt =>
     opt.WithOrigins(builder.Configuration.GetSection("Cors:Urls").Get<string[]>()!);
 }));
 
-builder.Services.AddHttpClient<SmsRuProvider>(client =>
-{
-    client.BaseAddress = new Uri(builder.Configuration["SmsRu:Url"] ?? throw new InvalidOperationException("SmsRu url not set"));
-});
-
-builder.Services.AddHttpClient<SmsRu2Provider>(client =>
-{
-    client.BaseAddress = new Uri(builder.Configuration["SmsRu2:Url"] ?? throw new InvalidOperationException("SmsRu2 url not set"));
-});
-
+builder.Services.AddSingleton<IHttpClientWrapper, HttpClientWrapper>();
 builder.Services.AddOpenSearch(builder.Configuration);
 builder.Services.AddSingleton<ValidationService>();
-builder.Services.AddSingleton<ProviderManager>();
 builder.Services.AddSingleton<ProviderFactory>();
 builder.Services.AddSingleton<SmsService>();
 builder.Services.AddSingleton<CallService>();
@@ -96,7 +95,7 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 app.MapHealthChecks("/healthz")
-    .RequireHost(builder.Configuration.GetSection("MonitoringHosts").Get<string[]>());
+    .RequireHost(builder.Configuration.GetSection("Settings:MonitoringHosts").Get<string[]>());
 
 var provider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();
 if (!app.Environment.IsProduction())

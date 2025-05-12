@@ -1,25 +1,25 @@
-﻿using Kp.Ms.Sms.Entities.Enums;
-using Kp.Ms.Sms.Interfaces;
-using Kp.Ms.Sms.Services;
+﻿using Common.HttpClientWrapper;
+using Kp.Ms.Sms.Config;
+using Kp.Ms.Sms.Providers;
 
 namespace Kp.Ms.Sms.Factories;
 
 public class ProviderFactory
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IHttpClientWrapper _client;
 
-    public ProviderFactory(IServiceProvider serviceProvider)
+    public ProviderFactory(IHttpClientWrapper client)
     {
-        _serviceProvider = serviceProvider;
+        _client = client;
     }
 
-    public IProvider GetProvider(SmsProvider provider)
+    public Provider GetProvider(ProviderSettings settings)
     {
-        return provider switch
+        return settings.Id switch
         {
-            SmsProvider.SmsRu => _serviceProvider.GetRequiredService<SmsRuProvider>(),
-            SmsProvider.SmsRu2 => _serviceProvider.GetRequiredService<SmsRu2Provider>(),
-            _ => throw new NotSupportedException($"Provider: {provider} is not supported")
+            ProviderNames.SmsRu => new SmsRuProvider(_client, settings),
+            ProviderNames.Megafon => new MegafonProvider(_client, settings),
+            _ => throw new NotSupportedException($"Provider: {settings.Name} is not supported")
         };
     }
 }
