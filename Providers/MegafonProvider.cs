@@ -31,10 +31,16 @@ public class MegafonProvider : Provider
                 Message = message
             };
 
-            var response = await Client.PostAsync<MegafonRequest, SmsResponse>($"{Settings.Url}/sms/v1/sms", parameters,
+            var response = await Client.PostAsync<MegafonRequest, MegafonResponse>($"{Settings.Url}/sms/v1/sms", parameters,
                 headers: DefaultHeaders);
-            response.ProviderName = ProviderNames.Megafon.ToString();
-            return response;
+
+            return new SmsResponse()
+            {
+                ProviderName = ProviderNames.Megafon.ToString(),
+                Status = SmsRuResponseStatus.OK.ToString(),
+                StatusCode = response?.Result?.Status?.Code,
+                StatusText = response?.Result?.Status?.Description
+            };
         }
         catch (Exception ex)
         {
