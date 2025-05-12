@@ -1,6 +1,7 @@
 ﻿using Common.HttpClientWrapper;
 using Kp.Ms.Sms.Config;
 using Kp.Ms.Sms.Entities.Enums;
+using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
 using System.Text;
 
@@ -23,14 +24,14 @@ public class MegafonProvider : Provider
     public override async Task<SmsResponse> SendSmsAsync(string phone, string message)
     {
         try { 
-            var parameters = new Dictionary<string, object>
+            var parameters = new MegafonRequest()
             {
-                { "from", Settings.FromNumber },
-                { "to", Convert.ToInt32(phone) },
-                { "message", message }
+                From = Settings.FromNumber,
+                To = Convert.ToInt64(phone),
+                Message = message
             };
 
-            var response = await Client.PostAsync<object, SmsResponse>($"{Settings.Url}/sms/v1/sms", parameters,
+            var response = await Client.PostAsync<MegafonRequest, SmsResponse>($"{Settings.Url}/sms/v1/sms", parameters,
                 headers: DefaultHeaders);
             response.ProviderName = ProviderNames.Megafon.ToString();
             return response;
