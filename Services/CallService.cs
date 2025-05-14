@@ -91,7 +91,7 @@ public class CallService
             var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp);
 
             // Звонок совершен успешно
-            if (response.Status == SmsRuResponseStatus.OK.ToString())
+            if (response.Status == SmsResponseStatus.OK.ToString())
             {
                 response.Status = StatusType.Success.ToString();
 
@@ -198,7 +198,7 @@ public class CallService
                errorMessage: string.Empty
            );
 
-            if (response.Status == SmsRuResponseStatus.OK.ToString())
+            if (response.Status == SmsResponseStatus.OK.ToString())
             {
                 await EnqueueCallback(request.CallbackUrl, new
                 {

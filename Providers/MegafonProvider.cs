@@ -37,7 +37,7 @@ public class MegafonProvider : Provider
             return new SmsResponse()
             {
                 ProviderName = ProviderNames.Megafon.ToString(),
-                Status = SmsRuResponseStatus.OK.ToString(),
+                Status = SmsResponseStatus.OK.ToString(),
                 StatusCode = response?.Result?.Status?.Code,
                 StatusText = response?.Result?.Status?.Description
             };
@@ -46,7 +46,7 @@ public class MegafonProvider : Provider
         {
             return new SmsResponse()
             {
-                Status = SmsRuResponseStatus.ERROR.ToString(),
+                Status = SmsResponseStatus.ERROR.ToString(),
                 StatusText = ex.Message
             };
         }
@@ -54,12 +54,6 @@ public class MegafonProvider : Provider
 
     public override async Task<CallResponse> CallApiAsync(string phone, string? userIp)
     {
-        var ip = string.IsNullOrEmpty(userIp) ? DefaultUserIp : userIp;
-
-        var apiId = Settings.Password;
-        var url = $"{Settings.Url}/code/call?phone={phone}&ip={ip}&api_id={apiId}";
-
-        var response = await Client.GetAsync<CallResponse>(url);
-        return response;
+        throw new NotImplementedException();
     }
 }

@@ -36,7 +36,7 @@ public class SmsRuProvider : Provider
         {
             return new SmsResponse()
             {
-                Status = SmsRuResponseStatus.ERROR.ToString(),
+                Status = SmsResponseStatus.ERROR.ToString(),
                 StatusText = ex.Message
             };
         }
