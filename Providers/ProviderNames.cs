@@ -4,5 +4,6 @@ public enum ProviderNames
 {
     SmsRu,
     Megafon,
-    SMSC
+    SMSC,
+    Beeline
 }
