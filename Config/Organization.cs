@@ -8,6 +8,7 @@ namespace Kp.Ms.Sms.Config;
 public class Organization
 {
     public string Name { get; set; }
+    public bool AutoSwitchProvider { get; set; } = false;
     public Dictionary<ProviderNames, ProviderSettings> ConfigureProviders { get; set; } = [];
     public ProviderNames DefaultProvider { get; set; }
 
@@ -19,7 +20,7 @@ public class Organization
         {
             var defaultProvider = factory.GetProvider(ConfigureProviders[DefaultProvider]);
             var response = await defaultProvider.SendSmsAsync(phone, message);
-            if (response.Status != SmsResponseStatus.OK.ToString())
+            if (response.Status != SmsResponseStatus.OK.ToString() && AutoSwitchProvider)
             {
                 throw new Exception();
             }
