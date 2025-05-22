@@ -65,7 +65,7 @@ public class SmsService
             var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message);
 
             // Отправка смс прошла успешна
-            if (response.Status == SmsRuResponseStatus.OK.ToString())
+            if (response.Status == SmsResponseStatus.OK.ToString())
             {
                 await EnqueueCallback(request.CallbackUrl, new
                 {
@@ -138,7 +138,7 @@ public class SmsService
             var status = string.Empty;
             var errorMessage = string.Empty;
 
-            if (response.Status == SmsRuResponseStatus.OK.ToString())
+            if (response.Status == SmsResponseStatus.OK.ToString())
             {
 
                 await EnqueueCallback(request.CallbackUrl, new

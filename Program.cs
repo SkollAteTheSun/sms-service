@@ -121,6 +121,8 @@ app.UseMiddleware<AuthorizationMiddleware>();
 
 app.UseAuthorization();
 
+app.MapConfigurationEndpoints(builder.Configuration.GetSection("Token").Get<string>());
+
 app.MapControllers();
 
 app.Run();

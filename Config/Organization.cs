@@ -19,7 +19,7 @@ public class Organization
         {
             var defaultProvider = factory.GetProvider(ConfigureProviders[DefaultProvider]);
             var response = await defaultProvider.SendSmsAsync(phone, message);
-            if (response.Status != SmsRuResponseStatus.OK.ToString())
+            if (response.Status != SmsResponseStatus.OK.ToString())
             {
                 throw new Exception();
             }
@@ -35,7 +35,7 @@ public class Organization
             {
                 return new SmsResponse()
                 {
-                    Status = SmsRuResponseStatus.ERROR.ToString(),
+                    Status = SmsResponseStatus.ERROR.ToString(),
                 };
             }
             else
@@ -44,7 +44,7 @@ public class Organization
                 {
                     var provider = factory.GetProvider(settings);
                     var response = await provider.SendSmsAsync(phone, message);
-                    if (response.Status == SmsRuResponseStatus.OK.ToString())
+                    if (response.Status == SmsResponseStatus.OK.ToString())
                     {
                         return response;
                     }
@@ -56,7 +56,7 @@ public class Organization
 
                 return new SmsResponse()
                 {
-                    Status = SmsRuResponseStatus.ERROR.ToString(),
+                    Status = SmsResponseStatus.ERROR.ToString(),
                     StatusText = $"All attempts to send SMS failed"
                 };
             }
@@ -69,7 +69,7 @@ public class Organization
         {
             var defaultProvider = factory.GetProvider(ConfigureProviders[DefaultProvider]);
             var response = await defaultProvider.CallApiAsync(phone, userIp);
-            if (response.Status != SmsRuResponseStatus.OK.ToString())
+            if (response.Status != SmsResponseStatus.OK.ToString())
             {
                 throw new Exception();
             }
@@ -85,7 +85,7 @@ public class Organization
             {
                 return new CallResponse()
                 {
-                    Status = SmsRuResponseStatus.ERROR.ToString(),
+                    Status = SmsResponseStatus.ERROR.ToString(),
                 };
             }
             else
@@ -94,7 +94,7 @@ public class Organization
                 {
                     var provider = factory.GetProvider(settings);
                     var response = await provider.CallApiAsync(phone, userIp);
-                    if (response.Status == SmsRuResponseStatus.OK.ToString())
+                    if (response.Status == SmsResponseStatus.OK.ToString())
                     {
                         return response;
                     }
@@ -106,7 +106,7 @@ public class Organization
 
                 return new CallResponse()
                 {
-                    Status = SmsRuResponseStatus.ERROR.ToString(),
+                    Status = SmsResponseStatus.ERROR.ToString(),
                     StatusText = $"All attempts to send SMS failed"
                 };
             }

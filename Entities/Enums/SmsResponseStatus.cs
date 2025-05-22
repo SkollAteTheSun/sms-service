@@ -1,6 +1,6 @@
 ﻿namespace Kp.Ms.Sms.Entities.Enums;
 
-public enum SmsRuResponseStatus
+public enum SmsResponseStatus
 {
     OK,
     ERROR
