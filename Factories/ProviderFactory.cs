@@ -20,6 +20,7 @@ public class ProviderFactory
             ProviderNames.SmsRu => new SmsRuProvider(_client, settings),
             ProviderNames.Megafon => new MegafonProvider(_client, settings),
             ProviderNames.SMSC => new SmsCProvider(_client, settings),
+            ProviderNames.Beeline => new BeelineProvider(_client, settings),
             _ => throw new NotSupportedException($"Provider: {settings.Name} is not supported")
         };
     }

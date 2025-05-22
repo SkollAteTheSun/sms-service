@@ -26,7 +26,7 @@ public class MegafonProvider : Provider
         try { 
             var parameters = new MegafonRequest()
             {
-                From = Settings.FromNumber,
+                From = Settings.Sender,
                 To = Convert.ToInt64(phone),
                 Message = message
             };

@@ -21,7 +21,7 @@ public class SmsRuProvider : Provider
         {
             var parameters = new SmsRuRequest()
             {
-                From = Settings.FromNumber,
+                From = Settings.Sender,
                 ApiId = Settings.Password,
                 Json = "1",
                 To = phone,
