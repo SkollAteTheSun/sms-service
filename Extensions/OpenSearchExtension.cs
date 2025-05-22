@@ -9,19 +9,19 @@ public static class OpenSearchExtension
 {
     public static void AddOpenSearch(this IServiceCollection services, IConfiguration configuration)
     {
-        string? openSearchUrl = configuration["OpenSearch:Url"];
+        string? openSearchUrl = configuration["Settings:OpenSearch:Url"];
         if (string.IsNullOrEmpty(openSearchUrl))
         {
             throw new Exception("OpenSearch url is empty");
         }
 
-        string? openSearchUser = configuration["OpenSearch:User"];
+        string? openSearchUser = configuration["Settings:OpenSearch:User"];
         if (string.IsNullOrEmpty(openSearchUser))
         {
             throw new Exception("OpenSearch user is empty");
         }
 
-        string? openSearchPassword = configuration["OpenSearch:Password"];
+        string? openSearchPassword = configuration["Settings:OpenSearch:Password"];
         if (string.IsNullOrEmpty(openSearchPassword))
         {
             throw new Exception("OpenSearch password is empty");
@@ -41,13 +41,13 @@ public static class OpenSearchExtension
     }
     public static string GetSmsStorageName(this IConfiguration configuration)
     {
-        return configuration["Storages:Sms"] ??
+        return configuration["Settings:Storages:Sms"] ??
               throw new Exception("Sms storage name not configured");
     }
 
     public static string GetCallStorageName(this IConfiguration configuration)
     {
-        return configuration["Storages:Call"] ??
+        return configuration["Settings:Storages:Call"] ??
               throw new Exception("Call storage name not configured");
     }
 

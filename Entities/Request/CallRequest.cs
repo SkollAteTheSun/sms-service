@@ -5,6 +5,8 @@ namespace Kp.Ms.Sms.Entities.Request;
 
 public class CallRequest
 {
+    public string OrganizationName { get; set; }
+
     [DefaultValue(89991002233)]
     public string Phone { get; set; } = string.Empty;
 

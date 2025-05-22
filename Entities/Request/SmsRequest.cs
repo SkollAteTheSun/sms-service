@@ -1,15 +1,12 @@
-﻿using System.ComponentModel;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace Kp.Ms.Sms.Entities.Request;
 
 public class SmsRequest
 {
+    public string OrganizationName { get; set; }
     public string Phone { get; set; } = string.Empty;
-
     public string Message { get; set; } = string.Empty;
-
-    [DefaultValue(null)]
     public string? CallbackUrl { get; set; }
 
     [JsonIgnore]

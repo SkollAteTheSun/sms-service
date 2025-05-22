@@ -52,25 +52,6 @@ public class CallController : ControllerBase
         }
     }
 
-    [HttpPost("switch")]
-    public IActionResult Switch([FromBody] SmsSwitchRequest request)
-    {
-        if (_callService.SwitchProvider(request.Provider))
-            return Ok(new { status = StatusType.Success });
-
-        return BadRequest(new StatusResponse
-        {
-            Status = StatusType.Failure.ToString(),
-            Error = "Invalid provider code",
-        });
-    }
-
-    [HttpGet("active-provider")]
-    public IActionResult GetActiveProvider()
-    {
-        return Ok(new { activeProvider = _callService.GetActiveProvider() });
-    }
-
     [HttpGet("queue-status")]
     public IActionResult GetQueueStatus()
     {
