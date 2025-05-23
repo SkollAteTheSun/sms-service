@@ -14,11 +14,11 @@ public class Organization
 
     public ProviderSettings GetDefaultProviderSettings() => ConfigureProviders[DefaultProvider];
 
-    public async Task<SmsResponse> SendSmsAsync(ProviderFactory factory, string phone, string message)
+    public async Task<SmsResponse> SendSmsAsync(ProviderFactory factory, string phone, string message, ProviderNames? providerName = null)
     {
         try
         {
-            var defaultProvider = factory.GetProvider(ConfigureProviders[DefaultProvider]);
+            var defaultProvider = factory.GetProvider(ConfigureProviders[providerName ?? DefaultProvider]);
             var response = await defaultProvider.SendSmsAsync(phone, message);
             if (response.Status != SmsResponseStatus.OK.ToString() && AutoSwitchProvider)
             {
@@ -29,8 +29,13 @@ public class Organization
         catch (Exception ex)
         {
             var providerSettings = ConfigureProviders.Values
-                .Where(settings => settings.Id != DefaultProvider)
+                .Where(settings => (providerName == null && settings.Id != DefaultProvider) || (providerName != null && settings.Id != providerName))
                 .ToList();
+
+            providerSettings.Sort((ProviderSettings x, ProviderSettings y) =>
+            { 
+                return x.Id == DefaultProvider ? -1 : y.Id == DefaultProvider ? 1 : 0;
+            });
 
             if (!providerSettings.Any())
             {
@@ -64,11 +69,11 @@ public class Organization
         }
     }
 
-    public async Task<CallResponse> CallApiAsync(ProviderFactory factory, string phone, string userIp)
+    public async Task<CallResponse> CallApiAsync(ProviderFactory factory, string phone, string userIp, ProviderNames? providerName = null)
     {
         try
         {
-            var defaultProvider = factory.GetProvider(ConfigureProviders[DefaultProvider]);
+            var defaultProvider = factory.GetProvider(ConfigureProviders[providerName ?? DefaultProvider]);
             var response = await defaultProvider.CallApiAsync(phone, userIp);
             if (response.Status != SmsResponseStatus.OK.ToString())
             {
@@ -79,8 +84,14 @@ public class Organization
         catch (Exception ex)
         {
             var providerSettings = ConfigureProviders.Values
-                .Where(settings => settings.Id != DefaultProvider)
+                .Where(settings => providerName == null && settings.Id != DefaultProvider)
+                .Where(settings => providerName != null && settings.Id != providerName)
                 .ToList();
+
+            providerSettings.Sort((ProviderSettings x, ProviderSettings y) =>
+            {
+                return x.Id == DefaultProvider ? 1 : y.Id == DefaultProvider ? -1 : 0;
+            });
 
             if (!providerSettings.Any())
             {

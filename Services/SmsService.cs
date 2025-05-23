@@ -62,7 +62,7 @@ public class SmsService
 
             if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return ErrorMessages.InvalidCallbackUrl;
 
-            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message);
+            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message, request.Provider);
 
             // Отправка смс прошла успешна
             if (response.Status == SmsResponseStatus.OK.ToString())
@@ -133,14 +133,13 @@ public class SmsService
                 _logger.LogError($"Organization with name \"{request.OrganizationName}\" not exist.");
                 continue;
             }
-            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message);
+            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message, request.Provider);
 
             var status = string.Empty;
             var errorMessage = string.Empty;
 
             if (response.Status == SmsResponseStatus.OK.ToString())
             {
-
                 await EnqueueCallback(request.CallbackUrl, new
                 {
                     phone = request.Phone,
