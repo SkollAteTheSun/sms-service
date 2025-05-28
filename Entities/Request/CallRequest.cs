@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using Kp.Ms.Sms.Providers;
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 
 namespace Kp.Ms.Sms.Entities.Request;
@@ -12,6 +13,9 @@ public class CallRequest
 
     [DefaultValue(null)]
     public string? CallbackUrl { get; set; }
+
+    [DefaultValue(null)]
+    public ProviderNames? Provider { get; set; }
 
     [DefaultValue(null)]
     public string? UserIp { get; set; } = string.Empty;

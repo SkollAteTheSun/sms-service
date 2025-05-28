@@ -10,6 +10,8 @@ using Kp.Ms.Sms.Providers;
 using Microsoft.Extensions.Options;
 using OpenSearch.Client;
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Kp.Ms.Sms.Services;
 
@@ -46,7 +48,7 @@ public class SmsService
         _queueSettings = queueSettings.Value;
     }
 
-    public async Task<string> SendSmsAsync(SmsRequest request)
+    public async Task<StatusResponse> SendSmsAsync(SmsRequest request)
     {
         try
         {
@@ -58,11 +60,19 @@ public class SmsService
             request.MessId = GenerateMessageId();
             string cleanedPhoneNumber;
 
-            if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber)) return ErrorMessages.InvalidPhoneNumber;
+            if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber)) return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = ErrorMessages.InvalidPhoneNumber
+            };
 
-            if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return ErrorMessages.InvalidCallbackUrl;
+            if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = ErrorMessages.InvalidCallbackUrl
+            };
 
-            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message);
+            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message, request.Provider);
 
             // Отправка смс прошла успешна
             if (response.Status == SmsResponseStatus.OK.ToString())
@@ -77,7 +87,9 @@ public class SmsService
                 });
 
                 await LogSmsToOpenSearch(request, StatusType.Success.ToString(), response.ProviderName);
-                return StatusType.Success.ToString();
+                return new StatusResponse {
+                    Status = StatusType.Success
+                };
             }
 
             if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
@@ -86,7 +98,11 @@ public class SmsService
                 if (!EnqueueSms(request))
                 {
                     await LogSmsToOpenSearch(request, StatusType.Failure.ToString(), response.ProviderName, ErrorMessages.QueueLimitReached);
-                    return ErrorMessages.QueueLimitReached;
+                    return new StatusResponse
+                    {
+                        Status = StatusType.Failure,
+                        Error = ErrorMessages.QueueLimitReached
+                    };
                 }
 
                 // Есть место в очереди - добавляем в очередеь
@@ -100,17 +116,52 @@ public class SmsService
                 });
 
                 await LogSmsToOpenSearch(request, StatusType.Queued.ToString(), response.ProviderName, ErrorMessages.NoRouteToHost);
-                return StatusType.Queued.ToString();
+                return new StatusResponse
+                {
+                    Status = StatusType.Queued
+                };
             }
 
             // Непредвиденные ошибки
             await LogSmsToOpenSearch(request, response.Status, response.ProviderName, response.StatusText);
-            return response.Status;
+            return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = response.Status
+            };
         }
         catch (Exception ex)
         {
-            return StatusType.Failure.ToString();
+            return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = ex.Message
+            };
         }
+    }
+
+    public async Task<SmsStatusResponse> GetLastSmsStatusesAsync(string phone)
+    {
+        if (!_validationService.ValidPhoneNumber(phone, out var cleanedPhoneNumber))
+        {
+            throw new ArgumentException(ErrorMessages.InvalidPhoneNumber);
+        }
+
+        var result = (await _openSearchClient.SearchAsync<SmsLog>(s => s
+            .Index(_configuration.GetSmsStorageName())
+            .Query(q => q
+                .Match(m => m
+                    .Field(fld => fld.Phone)
+                    .Query(phone)))
+            .Sort(sort => sort.Descending(fld => fld.Date))
+            .Size(5)))
+        .Documents
+        .ToList();
+
+        Regex pattern = new Regex("[0-9A-Za-z]");
+        result.ForEach(sms => sms.TextMessage = pattern.Replace(sms.TextMessage, "*"));
+
+        return new SmsStatusResponse { Statuses = result };
     }
 
     public async Task ProcessQueue()
@@ -133,14 +184,13 @@ public class SmsService
                 _logger.LogError($"Organization with name \"{request.OrganizationName}\" not exist.");
                 continue;
             }
-            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message);
+            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message, request.Provider);
 
             var status = string.Empty;
             var errorMessage = string.Empty;
 
             if (response.Status == SmsResponseStatus.OK.ToString())
             {
-
                 await EnqueueCallback(request.CallbackUrl, new
                 {
                     phone = request.Phone,

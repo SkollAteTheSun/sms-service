@@ -1,12 +1,11 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Kp.Ms.Sms.Entities.Enums;
 using System.Text.Json.Serialization;
 
 namespace Kp.Ms.Sms.Entities.Response;
 
-public class StatusResponse
+public class StatusResponse : Versioning
 {
-    [Required]
-    public required string Status { get; set; }
+    public StatusType Status { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Error { get; set; }

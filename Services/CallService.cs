@@ -88,7 +88,7 @@ public class CallService
                 };
             }
 
-            var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp);
+            var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp, request.Provider);
 
             // Звонок совершен успешно
             if (response.Status == SmsResponseStatus.OK.ToString())
@@ -188,7 +188,7 @@ public class CallService
                 _logger.LogError($"Organization with name \"{request.OrganizationName}\" not exist.");
                 continue;
             }
-            var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp);
+            var response = await organization.CallApiAsync(_providerFactory, request.Phone, request.UserIp, request.Provider);
 
             var logRequest = new CallLogRequest(
                phone: request.Phone,

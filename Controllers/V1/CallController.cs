@@ -6,6 +6,8 @@ using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using System.Reflection;
+using System;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 [ApiController]
@@ -16,16 +18,20 @@ namespace Kp.Ms.Sms.Controllers.V1;
 public class CallController : ControllerBase
 {
     private readonly CallService _callService;
+    private readonly string _version;
 
     public CallController(CallService callService)
     {
         _callService = callService;
+        _version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
     }
 
     [HttpPost("send")]
     public async Task<IActionResult> InitiateCall([FromBody] CallRequest request)
     {
         var response = await _callService.InitiateCallAsync(request);
+
+        response.Version = _version;
 
         switch (response.Status)
         {
@@ -46,6 +52,7 @@ public class CallController : ControllerBase
             default:
                 return StatusCode(500, new CallResponse
                 {
+                    Version = _version,
                     Status = StatusType.Failure.ToString(),
                     StatusText = response.StatusText,
                 });
@@ -55,12 +62,20 @@ public class CallController : ControllerBase
     [HttpGet("queue-status")]
     public IActionResult GetQueueStatus()
     {
-        return Ok(new { queued = _callService.GetCallQueueStatus() });
+        return Ok(new QueueStatusResponse
+        {
+            Version = _version,
+            Queued = _callService.GetCallQueueStatus()
+        });
     }
 
     [HttpGet("queue-callback-status")]
     public IActionResult GetCallbackQueueStatus()
     {
-        return Ok(new { queued = _callService.GetCallbackQueueStatus() });
+        return Ok(new QueueStatusResponse
+        {
+            Version = _version,
+            Queued = _callService.GetCallbackQueueStatus()
+        });
     }
 }
