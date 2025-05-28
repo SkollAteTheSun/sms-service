@@ -2,7 +2,7 @@
 
 namespace Kp.Ms.Sms.Entities.Response;
 
-public class CallResponse
+public class CallResponse : Versioning
 {
     [JsonProperty("status")]
     public string Status { get; set; }
