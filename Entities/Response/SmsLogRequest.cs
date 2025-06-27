@@ -8,12 +8,12 @@ public class SmsLogRequest
     public string? MessId { get; set; }
     public string? ErrorMessage { get; set; }
 
-    public SmsLogRequest(string? phone, string? textMessage, string status, string? messId, string? errorMessage)
-    {
-        Phone = phone;
-        TextMessage = textMessage;
-        Status = status;
-        MessId = messId;
-        ErrorMessage = errorMessage;
-    }
+    //public SmsLogRequest(string? phone, string? textMessage, string status, string? messId, string? errorMessage)
+    //{
+    //    Phone = phone;
+    //    TextMessage = textMessage;
+    //    Status = status;
+    //    MessId = messId;
+    //    ErrorMessage = errorMessage;
+    //}
 }

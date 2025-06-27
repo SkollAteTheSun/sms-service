@@ -1,115 +1,171 @@
-﻿using Kp.Ms.Sms.Entities.Entity;
+﻿using Common.HttpClientWrapper;
+using Kp.Ms.Sms.Config;
+using Kp.Ms.Sms.Entities.Entity;
 using Kp.Ms.Sms.Entities.Enums;
 using Kp.Ms.Sms.Entities.Request;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Extensions;
 using Kp.Ms.Sms.Factories;
+using Kp.Ms.Sms.Providers;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
 using OpenSearch.Client;
 using System.Collections.Concurrent;
-using System.Text;
+using System.Text.RegularExpressions;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Kp.Ms.Sms.Services;
 
 public class SmsService
 {
-    private readonly ConcurrentQueue<SmsRequest> _smsQueue;
-    private readonly ConcurrentQueue<CallbackItem> _smsCallbackQueue;
+    private readonly ILogger<SmsService> _logger;
+    private readonly ConcurrentQueue<SmsRequest> _smsQueue = [];
+    private readonly ConcurrentQueue<CallbackItem> _smsCallbackQueue = [];
     private readonly QueueSettings _queueSettings;
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientWrapper _httpClient;
     private readonly OpenSearchClient _openSearchClient;
     private IConfiguration _configuration;
-    private readonly ProviderManager _providerManager;
     private readonly ProviderFactory _providerFactory;
-    private SmsProvider _activeProvider;
     private readonly ValidationService _validationService;
 
-    public SmsService(ProviderManager providerManager, ProviderFactory providerFactory, ValidationService validationService, IConfiguration configuration, HttpClient httpClient, OpenSearchClient openSearchClient, IOptions<QueueSettings> queueSettings)
+    private Dictionary<string, Organization> _organizations =>
+        _configuration.GetSection("Settings:Organizations")?.Get<Dictionary<string, Organization>>();
+
+    public SmsService(
+        ILogger<SmsService> logger,
+        ProviderFactory providerFactory,
+        ValidationService validationService,
+        IConfiguration configuration,
+        IHttpClientWrapper httpClient,
+        OpenSearchClient openSearchClient,
+        IOptions<QueueSettings> queueSettings)
     {
+        _logger = logger;
         _configuration = configuration;
         _httpClient = httpClient;
         _openSearchClient = openSearchClient;
         _validationService = validationService;
-        _providerManager = providerManager;
         _providerFactory = providerFactory;
-        _activeProvider = _providerManager.GetActiveProvider(ServiceType.Sms);
         _queueSettings = queueSettings.Value;
-        _smsQueue = new ConcurrentQueue<SmsRequest>();
-        _smsCallbackQueue = new ConcurrentQueue<CallbackItem>();
     }
 
-    public async Task<string> SendSmsAsync(SmsRequest request)
+    public async Task<StatusResponse> SendSmsAsync(SmsRequest request)
     {
-        var provider = _providerFactory.GetProvider(_activeProvider);
-        request.MessId = GenerateMessageId();
-        string cleanedPhoneNumber;
-
-        if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber))  return ErrorMessages.InvalidPhoneNumber;
-
-        if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return ErrorMessages.InvalidCallbackUrl;
-
-        var response = await provider.SendSmsAsync(request.Phone, request.Message);
-
-        // Отправка смс прошла успешна
-        if (response.Status == SmsRuResponseStatus.OK.ToString())
+        try
         {
-            await EnqueueCallback(request.CallbackUrl, new
+            if (!_organizations.TryGetValue(request.OrganizationName, out var organization))
             {
-                phone = request.Phone,
-                message = request.Message,
-                messId = request.MessId,
-                status = StatusType.Success.ToString(),
-                errorMessage = response.StatusText
-            });
-
-            await LogSmsToOpenSearch(CreateSmsLogRequest(request, StatusType.Success.ToString()));
-            return StatusType.Success.ToString();
-        }
-
-        if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
-        {
-            // Если очередь переплнена, возвращаем ошибку
-            if (!EnqueueSms(request))
-            {
-                await LogSmsToOpenSearch(CreateSmsLogRequest(request, StatusType.Failure.ToString(), ErrorMessages.QueueLimitReached));
-                return ErrorMessages.QueueLimitReached;
+                throw new ArgumentException($"Organization with name \"{request.OrganizationName}\" not exist.");
             }
 
-            // Есть место в очереди - добавляем в очередеь
+            request.MessId = GenerateMessageId();
+            string cleanedPhoneNumber;
 
-            await EnqueueCallback(request.CallbackUrl, new
+            if (!_validationService.ValidPhoneNumber(request.Phone, out cleanedPhoneNumber)) return new StatusResponse
             {
-                phone = request.Phone,
-                message = request.Message,
-                messId = request.MessId,
-                status = StatusType.Queued.ToString(),
-                errorMessage = response.StatusText
-            });
+                Status = StatusType.Failure,
+                Error = ErrorMessages.InvalidPhoneNumber
+            };
 
-            await LogSmsToOpenSearch(CreateSmsLogRequest(request, StatusType.Queued.ToString(), ErrorMessages.NoRouteToHost));
-            return StatusType.Queued.ToString();
+            if (!string.IsNullOrEmpty(request.CallbackUrl) && !_validationService.ValidUrl(request.CallbackUrl)) return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = ErrorMessages.InvalidCallbackUrl
+            };
+
+            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message, request.Provider);
+
+            // Отправка смс прошла успешна
+            if (response.Status == SmsResponseStatus.OK.ToString())
+            {
+                await EnqueueCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    message = request.Message,
+                    messId = request.MessId,
+                    status = StatusType.Success.ToString(),
+                    errorMessage = response.StatusText
+                });
+
+                await LogSmsToOpenSearch(request, StatusType.Success.ToString(), response.ProviderName);
+                return new StatusResponse {
+                    Status = StatusType.Success
+                };
+            }
+
+            if (response.StatusCode == (int)SmsRuErrorCode.ServiceUnavailable || response.StatusCode == (int)SmsRuErrorCode.InternalServerError)
+            {
+                // Если очередь переплнена, возвращаем ошибку
+                if (!EnqueueSms(request))
+                {
+                    await LogSmsToOpenSearch(request, StatusType.Failure.ToString(), response.ProviderName, ErrorMessages.QueueLimitReached);
+                    return new StatusResponse
+                    {
+                        Status = StatusType.Failure,
+                        Error = ErrorMessages.QueueLimitReached
+                    };
+                }
+
+                // Есть место в очереди - добавляем в очередеь
+                await EnqueueCallback(request.CallbackUrl, new
+                {
+                    phone = request.Phone,
+                    message = request.Message,
+                    messId = request.MessId,
+                    status = StatusType.Queued.ToString(),
+                    errorMessage = response.StatusText
+                });
+
+                await LogSmsToOpenSearch(request, StatusType.Queued.ToString(), response.ProviderName, ErrorMessages.NoRouteToHost);
+                return new StatusResponse
+                {
+                    Status = StatusType.Queued
+                };
+            }
+
+            // Непредвиденные ошибки
+            await LogSmsToOpenSearch(request, response.Status, response.ProviderName, response.StatusText);
+            return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = response.Status
+            };
         }
-
-        // Непредвиденные ошибки
-        await LogSmsToOpenSearch(CreateSmsLogRequest(request, response.Status, response.StatusText));
-        return response.Status;
+        catch (Exception ex)
+        {
+            return new StatusResponse
+            {
+                Status = StatusType.Failure,
+                Error = ex.Message
+            };
+        }
     }
 
-    private SmsLogRequest CreateSmsLogRequest(SmsRequest request, string status, string errorMessage = null)
+    public async Task<SmsStatusResponse> GetLastSmsStatusesAsync(string phone)
     {
-        return new SmsLogRequest(
-            request.Phone,
-            request.Message,
-            status,
-            request.MessId,
-            errorMessage
-        );
+        if (!_validationService.ValidPhoneNumber(phone, out var cleanedPhoneNumber))
+        {
+            throw new ArgumentException(ErrorMessages.InvalidPhoneNumber);
+        }
+
+        var result = (await _openSearchClient.SearchAsync<SmsLog>(s => s
+            .Index(_configuration.GetSmsStorageName())
+            .Query(q => q
+                .Match(m => m
+                    .Field(fld => fld.Phone)
+                    .Query(phone)))
+            .Sort(sort => sort.Descending(fld => fld.Date))
+            .Size(5)))
+        .Documents
+        .ToList();
+
+        Regex pattern = new Regex("[0-9A-Za-z]");
+        result.ForEach(sms => sms.TextMessage = pattern.Replace(sms.TextMessage, "*"));
+
+        return new SmsStatusResponse { Statuses = result };
     }
 
     public async Task ProcessQueue()
     {
-        var provider = _providerFactory.GetProvider(_activeProvider);
         var batch = new List<SmsRequest>();
         for (int i = 0; i < _queueSettings.SmsBatchSize && _smsQueue.TryDequeue(out SmsRequest request); i++)
         {
@@ -123,19 +179,18 @@ public class SmsService
 
         foreach (var request in batch)
         {
-            var response = await provider.SendSmsAsync(request.Phone, request.Message);
-
-            var logRequest = new SmsLogRequest(
-                phone: request.Phone,
-                textMessage: request.Message,
-                status : string.Empty,
-                messId: request.MessId,
-                errorMessage: string.Empty
-            );
-
-            if (response.Status == SmsRuResponseStatus.OK.ToString())
+            if (!_organizations.TryGetValue(request.OrganizationName, out var organization))
             {
+                _logger.LogError($"Organization with name \"{request.OrganizationName}\" not exist.");
+                continue;
+            }
+            var response = await organization.SendSmsAsync(_providerFactory, request.Phone, request.Message, request.Provider);
 
+            var status = string.Empty;
+            var errorMessage = string.Empty;
+
+            if (response.Status == SmsResponseStatus.OK.ToString())
+            {
                 await EnqueueCallback(request.CallbackUrl, new
                 {
                     phone = request.Phone,
@@ -145,8 +200,8 @@ public class SmsService
                     errorMessage = response.StatusText
                 });
 
-                logRequest.Status = StatusType.Success.ToString();
-                logRequest.ErrorMessage = "Successful sending of call from queue";
+                status = StatusType.Success.ToString();
+                errorMessage = "Successful sending of call from queue";
             }
             else
             {
@@ -154,16 +209,18 @@ public class SmsService
                 {
                     if (!EnqueueSms(request))
                     {
-                        logRequest.Status = StatusType.Failure.ToString();
-                        logRequest.ErrorMessage = ErrorMessages.QueueLimitReached;
+                        status = StatusType.Failure.ToString();
+                        errorMessage = ErrorMessages.QueueLimitReached;
                     }
                 }
                 else
                 {
-                    logRequest.Status = StatusType.Failure.ToString();
-                    logRequest.ErrorMessage = response.StatusText;
+                    status = StatusType.Failure.ToString();
+                    errorMessage = response.StatusText;
                 }
             }
+
+            await LogSmsToOpenSearch(request, status, response.ProviderName, errorMessage);
 
             await Task.Delay(_queueSettings.SmsBatchIntervalMs);
         }
@@ -197,7 +254,10 @@ public class SmsService
         {
             if (item.Attempt >= _queueSettings.MaxSmsAttempts)
             {
-                await LogSmsToOpenSearch(new SmsLogRequest(null, null, StatusType.Failure.ToString(), null, $"Callback to url: {item.CallbackUrl} failed after {item.Attempt} attempts. Removing from queue."));
+                await LogSmsToOpenSearch(
+                    null,
+                    StatusType.Failure.ToString(),
+                    $"Callback to url: {item.CallbackUrl} failed after {item.Attempt} attempts. Removing from queue.");
                 return;
             }
 
@@ -207,13 +267,19 @@ public class SmsService
             {
                 if (_smsCallbackQueue.Count >= _queueSettings.SmsCallbackMaxSize)
                 {
-                    await LogSmsToOpenSearch(new SmsLogRequest(null, null, StatusType.Failure.ToString(), null, $"The callback queue is full! Callback queue size: {_smsCallbackQueue.Count}, callback url: {item.CallbackUrl}"));
+                    await LogSmsToOpenSearch(
+                        null,
+                        StatusType.Failure.ToString(),
+                        $"The callback queue is full! Callback queue size: {_smsCallbackQueue.Count}, callback url: {item.CallbackUrl}");
                     return;
                 }
             }
             else
             {
-                await LogSmsToOpenSearch(new SmsLogRequest(null, null, StatusType.Success.ToString(), null, $"Sending callback from queue to {item.CallbackUrl} was successful."));
+                await LogSmsToOpenSearch(
+                    null,
+                    StatusType.Success.ToString(),
+                    $"Sending callback from queue to {item.CallbackUrl} was successful.");
             }
 
             await Task.Delay(_queueSettings.SmsCallbackBatchIntervalMs);
@@ -229,7 +295,10 @@ public class SmsService
 
         if (_smsCallbackQueue.Count >= _queueSettings.SmsCallbackMaxSize)
         {
-            await LogSmsToOpenSearch(new SmsLogRequest(null, null, StatusType.Failure.ToString(), null, $"The callback queue is full! Callback queue size: {_smsCallbackQueue.Count}, callback url: {callbackUrl}"));
+            await LogSmsToOpenSearch(
+                null,
+                StatusType.Failure.ToString(),
+                $"The callback queue is full! Callback queue size: {_smsCallbackQueue.Count}, callback url: {callbackUrl}");
             return;
         }
         _smsCallbackQueue.Enqueue(new CallbackItem(callbackUrl, callbackData, 1));
@@ -237,12 +306,9 @@ public class SmsService
 
     private async Task<CallbackResponse> SendCallback(string callbackUrl, object callbackData, int attempt)
     {
-        var jsonContent = new StringContent(JsonConvert.SerializeObject(callbackData), Encoding.UTF8, "application/json");
-
         try
         {
-            var response = await _httpClient.PostAsync(callbackUrl, jsonContent);
-            response.EnsureSuccessStatusCode();
+            await _httpClient.PostAsync<object, object>(callbackUrl, callbackData);
             return new CallbackResponse
             {
                 Status = true,
@@ -268,17 +334,17 @@ public class SmsService
         }
     }
 
-    private async Task LogSmsToOpenSearch(SmsLogRequest logRequest)
+    private async Task LogSmsToOpenSearch(SmsRequest? request, string status, string provider = null, string errorMessage = null)
     {
         SmsLog log = new SmsLog
         {
-            MessId = logRequest.MessId,
-            Phone = logRequest.Phone,
-            TextMessage = logRequest.TextMessage,
+            MessId = request?.MessId,
+            Phone = request?.Phone,
+            TextMessage = request?.Message,
             Date = DateTime.UtcNow,
-            Status = logRequest.Status,
-            Provider = _activeProvider.ToString(),
-            ErrorMessage = logRequest.ErrorMessage
+            Status = status,
+            Provider = provider,
+            ErrorMessage = errorMessage
         };
 
         var response = await _openSearchClient.IndexAsync(log, idx => idx.Index(_configuration.GetSmsStorageName()));
@@ -307,14 +373,4 @@ public class SmsService
 
     public int GetQueueStatus() => _smsQueue.IsEmpty ? 0 : _smsQueue.Count;
     public int GetCallbackQueueStatus() => _smsCallbackQueue.IsEmpty ? 0 : _smsCallbackQueue.Count;
-
-    public bool SwitchProvider(SmsProvider provider)
-    {
-        return _providerManager.SetActiveProvider(ServiceType.Sms, provider);
-    }
-
-    public SmsProvider GetActiveProvider()
-    {
-        return _providerManager.GetActiveProvider(ServiceType.Sms);
-    }
 }

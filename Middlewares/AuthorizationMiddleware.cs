@@ -67,7 +67,7 @@ public class AuthorizationMiddleware
 
     private bool ValidateToken(string token, IConfiguration configuration)
     {
-        var validToken = configuration["Authorization:Token"];
+        var validToken = configuration["Settings:Authorization:Token"];
         return token == validToken;
     }
 
