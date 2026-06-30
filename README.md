@@ -19,16 +19,16 @@ rm -rf /root/ms/sms && mv ./publish /root/ms/sms
 ```
 
 ```bash
-cp kp-ms-sms.Staging.service /etc/systemd/system/kp-ms-sms.service
+cp ms-sms.Staging.service /etc/systemd/system/ms-sms.service
 ```
 
 ## Запуск
 ```bash
-sudo systemctl enable kp-ms-sms.service
-sudo systemctl start kp-ms-sms.service
-sudo systemctl status kp-ms-sms.service
-sudo systemctl disable kp-ms-sms.service
-sudo systemctl stop kp-ms-sms.service
+sudo systemctl enable ms-sms.service
+sudo systemctl start ms-sms.service
+sudo systemctl status ms-sms.service
+sudo systemctl disable ms-sms.service
+sudo systemctl stop ms-sms.service
 
 systemctl daemon-reload
 ```
