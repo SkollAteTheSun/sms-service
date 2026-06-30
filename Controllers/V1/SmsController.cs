@@ -7,11 +7,12 @@ using Kp.Ms.Sms.Entities.Enums;
 using Kp.Ms.Sms.Entities.Response;
 using Kp.Ms.Sms.Attributes;
 using System.Reflection;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Kp.Ms.Sms.Controllers.V1;
 
 [ApiController]
-[TokenAuthorization]
+[Authorize(AuthenticationSchemes = "SimpleToken")]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [SwaggerTag("Тестовый контроллер")]

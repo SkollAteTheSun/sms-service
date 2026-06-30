@@ -12,6 +12,11 @@ using Kp.Ms.Sms.Providers;
 using Common.HttpClientWrapper;
 using Configurator.Services.Impl;
 using NLog.Web;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +24,38 @@ var connectionString = builder.Configuration.GetRequiredSection("ConnectionStrin
 builder.AddConfigurationModule(connectionString);
 
 builder.Host.UseNLog();
+
+/*
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration.GetRequiredSection("Authorization:Token").Get<string>()!)) // длинный ключ
+        };
+    });
+*/
+
+builder.Services.AddAuthentication("SimpleToken")
+    .AddScheme<AuthenticationSchemeOptions, SimpleTokenAuthenticationHandler>("SimpleToken", null);
+
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = false, // <- отключает проверку exp (иначе 401)
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration.GetRequiredSection("Authorization:Token").Get<string>()!))
+        };
+    });
 
 builder.Services
     .AddControllers()
@@ -88,6 +125,11 @@ builder.Services.AddSingleton<ProviderFactory>();
 builder.Services.AddSingleton<SmsService>();
 builder.Services.AddSingleton<CallService>();
 
+//
+builder.Services.AddSingleton<IAuthorizationHandler, StaticTokenHandler>();
+builder.Services.AddHttpContextAccessor(); // обязательно!
+//
+
 builder.Services.AddHostedService<TimerService>();
 
 builder.Services.AddHealthChecks();
@@ -117,11 +159,11 @@ if (!app.Environment.IsProduction())
 
 app.UseCors("cors");
 
-app.UseMiddleware<AuthorizationMiddleware>();
+//app.UseMiddleware<AuthorizationMiddleware>();
+
+app.UseAuthentication();
 
 app.UseAuthorization();
-
-app.MapConfigurationEndpoints(builder.Configuration.GetSection("Token").Get<string>());
 
 app.MapControllers();
 
